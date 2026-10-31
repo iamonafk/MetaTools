@@ -128,15 +128,7 @@ jobs:
           TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           TITLE="Debug APK Build #${GITHUB_RUN_NUMBER}"
 
-          NOTES="### MetaTools Debug APK Build
-
-This is an automatically generated GitHub Actions debug APK for testing.
-
-- **Run Number**: ${GITHUB_RUN_NUMBER}
-- **Run Attempt**: ${GITHUB_RUN_ATTEMPT}
-- **Source SHA**: ${GITHUB_SHA}
-
-> **Note**: This APK is an automated debug build intended for testing purposes only. It is not a Google Play Store production release and was signed with a temporary debug keystore."
+          NOTES=$(printf "### MetaTools Debug APK Build\n\nThis is an automatically generated GitHub Actions debug APK for testing.\n\n- **Run Number**: %s\n- **Run Attempt**: %s\n- **Source SHA**: %s\n\n> **Note**: This APK is an automated debug build intended for testing purposes only. It is not a Google Play Store production release and was signed with a temporary debug keystore." "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA")
 
           gh release create "$TAG" "$ASSET_PATH" \
             --target "$GITHUB_SHA" \
