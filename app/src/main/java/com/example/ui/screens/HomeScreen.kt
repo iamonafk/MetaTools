@@ -79,10 +79,10 @@ fun HomeScreen(
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_tools),
-                        contentDescription = "MetaTools",
-                        tint = AccentGreen,
-                        modifier = Modifier.size(32.dp)
+                        painter = painterResource(id = R.drawable.ic_metatools_logo),
+                        contentDescription = "MetaTools Logo",
+                        tint = androidx.compose.ui.graphics.Color.Unspecified,
+                        modifier = Modifier.size(40.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
