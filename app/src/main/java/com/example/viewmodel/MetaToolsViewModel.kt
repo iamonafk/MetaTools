@@ -1,0 +1,328 @@
+package com.example.viewmodel
+
+import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.MappingResult
+import com.example.data.MetaConfigRepository
+import com.example.model.FlagCategory
+import com.example.model.FlagSearchResult
+import com.example.model.MappingSource
+import com.example.model.SubFlag
+import com.example.model.UniversalFlag
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+
+enum class AppTab {
+    HOME,
+    FLAGS,
+    TOOLS,
+    PROFILE
+}
+
+sealed class UiEvent {
+    data class ShowToast(val message: String) : UiEvent()
+    data class ShareText(val text: String, val title: String) : UiEvent()
+}
+
+@OptIn(FlowPreview::class)
+class MetaToolsViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = MetaConfigRepository(application)
+    private val prefs = application.getSharedPreferences("metatools_prefs", Context.MODE_PRIVATE)
+
+    private val _currentTab = MutableStateFlow(AppTab.FLAGS)
+    val currentTab: StateFlow<AppTab> = _currentTab.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _mappingSource = MutableStateFlow<MappingSource?>(null)
+    val mappingSource: StateFlow<MappingSource?> = _mappingSource.asStateFlow()
+
+    private val _categories = MutableStateFlow<List<FlagCategory>>(emptyList())
+    val categories: StateFlow<List<FlagCategory>> = _categories.asStateFlow()
+
+    private val _hasCustomMapping = MutableStateFlow(false)
+    val hasCustomMapping: StateFlow<Boolean> = _hasCustomMapping.asStateFlow()
+
+    // Expanded category ID (null if none expanded, or set of expanded category IDs)
+    private val _expandedCategories = MutableStateFlow<Set<String>>(emptySet())
+    val expandedCategories: StateFlow<Set<String>> = _expandedCategories.asStateFlow()
+
+    // Expanded universal flags IDs (for sub-flag disclosure)
+    private val _expandedFlags = MutableStateFlow<Set<String>>(emptySet())
+    val expandedFlags: StateFlow<Set<String>> = _expandedFlags.asStateFlow()
+
+    // Cache of category flags loaded for expanded categories
+    private val _categoryFlagsMap = MutableStateFlow<Map<String, List<UniversalFlag>>>(emptyMap())
+    val categoryFlagsMap: StateFlow<Map<String, List<UniversalFlag>>> = _categoryFlagsMap.asStateFlow()
+
+    // Search state
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<FlagSearchResult>>(emptyList())
+    val searchResults: StateFlow<List<FlagSearchResult>> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _recentSearches = MutableStateFlow<List<String>>(emptyList())
+    val recentSearches: StateFlow<List<String>> = _recentSearches.asStateFlow()
+
+    private val _uiEvents = MutableSharedFlow<UiEvent>()
+    val uiEvents: SharedFlow<UiEvent> = _uiEvents.asSharedFlow()
+
+    // Settings sheet visibility
+    private val _showSettingsSheet = MutableStateFlow(false)
+    val showSettingsSheet: StateFlow<Boolean> = _showSettingsSheet.asStateFlow()
+
+    // Mapping source selector dialog
+    private val _showSourceDialog = MutableStateFlow(false)
+    val showSourceDialog: StateFlow<Boolean> = _showSourceDialog.asStateFlow()
+
+    init {
+        loadRecentSearches()
+        loadInitialData()
+
+        // Debounced search trigger
+        viewModelScope.launch {
+            _searchQuery
+                .debounce(200)
+                .distinctUntilChanged()
+                .collectLatest { query ->
+                    if (query.trim().isEmpty()) {
+                        _searchResults.value = emptyList()
+                        _isSearching.value = false
+                    } else {
+                        _isSearching.value = true
+                        val results = repository.search(query)
+                        _searchResults.value = results
+                        _isSearching.value = false
+                    }
+                }
+        }
+    }
+
+    fun selectTab(tab: AppTab) {
+        _currentTab.value = tab
+    }
+
+    fun openSettings() {
+        _showSettingsSheet.value = true
+    }
+
+    fun closeSettings() {
+        _showSettingsSheet.value = false
+    }
+
+    fun openSourceDialog() {
+        _showSourceDialog.value = true
+    }
+
+    fun closeSourceDialog() {
+        _showSourceDialog.value = false
+    }
+
+    fun onSearchQueryChanged(newQuery: String) {
+        _searchQuery.value = newQuery
+    }
+
+    fun clearSearch() {
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+    }
+
+    fun executeSearch(query: String) {
+        _searchQuery.value = query
+        saveRecentSearch(query)
+    }
+
+    fun toggleCategory(categoryId: String) {
+        val current = _expandedCategories.value.toMutableSet()
+        if (current.contains(categoryId)) {
+            current.remove(categoryId)
+        } else {
+            current.add(categoryId)
+            // Load flags for this category if not yet cached
+            if (!_categoryFlagsMap.value.containsKey(categoryId)) {
+                viewModelScope.launch {
+                    val flags = repository.getFlagsForCategory(categoryId)
+                    val map = _categoryFlagsMap.value.toMutableMap()
+                    map[categoryId] = flags
+                    _categoryFlagsMap.value = map
+                }
+            }
+        }
+        _expandedCategories.value = current
+    }
+
+    fun toggleFlagExpansion(flagCode: String) {
+        val current = _expandedFlags.value.toMutableSet()
+        if (current.contains(flagCode)) {
+            current.remove(flagCode)
+        } else {
+            current.add(flagCode)
+        }
+        _expandedFlags.value = current
+    }
+
+    /**
+     * Copy actions strictly copy the exact raw value with zero formatting.
+     */
+    fun copyUniversalFlagName(flag: UniversalFlag) {
+        copyToClipboard(flag.name, "Copied universal flag name: ${flag.name}")
+    }
+
+    fun copyUniversalFlagCode(flag: UniversalFlag) {
+        copyToClipboard(flag.code, "Copied universal code: ${flag.code}")
+    }
+
+    fun copySubFlagName(subFlag: SubFlag) {
+        copyToClipboard(subFlag.name, "Copied sub-flag name: ${subFlag.name}")
+    }
+
+    fun copySubFlagCode(subFlag: SubFlag) {
+        copyToClipboard(subFlag.code, "Copied sub-flag code: ${subFlag.code}")
+    }
+
+    private fun copyToClipboard(text: String, message: String) {
+        val clipboard = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("MetaConfig", text)
+        clipboard.setPrimaryClip(clip)
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShowToast("Copied to clipboard"))
+        }
+    }
+
+    fun shareUniversalFlag(flag: UniversalFlag) {
+        val shareText = "${flag.name} (${flag.code})"
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(shareText, "Share Universal Flag"))
+        }
+    }
+
+    fun shareSubFlag(subFlag: SubFlag) {
+        val shareText = "${subFlag.name} (${subFlag.code})"
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(shareText, "Share Sub-Flag"))
+        }
+    }
+
+    fun shareCombinedFlag(flag: UniversalFlag) {
+        val builder = StringBuilder()
+        builder.append(flag.code).append(":").append(flag.name)
+        for (sub in flag.subFlags) {
+            builder.append(":").append(sub.code).append(":").append(sub.name)
+        }
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(builder.toString(), "Share MetaConfig Entry"))
+        }
+    }
+
+    fun importCustomMapping(uri: Uri, displayName: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            when (val result = repository.importCustomMapping(uri, displayName)) {
+                is MappingResult.Success -> {
+                    refreshData(result.source)
+                    _uiEvents.emit(UiEvent.ShowToast("Imported mapping: ${result.source.name} (${result.source.totalFlags} flags)"))
+                }
+                is MappingResult.Error -> {
+                    _isLoading.value = false
+                    _uiEvents.emit(UiEvent.ShowToast(result.message))
+                }
+            }
+        }
+    }
+
+    fun restoreBuiltInMapping() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            when (val result = repository.restoreBuiltInMapping()) {
+                is MappingResult.Success -> {
+                    refreshData(result.source)
+                    _uiEvents.emit(UiEvent.ShowToast("Restored built-in mapping Askxtylishh.json"))
+                }
+                is MappingResult.Error -> {
+                    _isLoading.value = false
+                    _uiEvents.emit(UiEvent.ShowToast(result.message))
+                }
+            }
+        }
+    }
+
+    fun switchToCustomMapping() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            when (val result = repository.switchToCustomMapping()) {
+                is MappingResult.Success -> {
+                    refreshData(result.source)
+                    _uiEvents.emit(UiEvent.ShowToast("Switched to custom mapping"))
+                }
+                is MappingResult.Error -> {
+                    _isLoading.value = false
+                    _uiEvents.emit(UiEvent.ShowToast(result.message))
+                }
+            }
+        }
+    }
+
+    private fun loadInitialData() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val source = repository.getActiveMappingSource()
+            _hasCustomMapping.value = repository.hasCustomMappingAvailable()
+            refreshData(source)
+        }
+    }
+
+    private suspend fun refreshData(source: MappingSource) {
+        _mappingSource.value = source
+        _categories.value = repository.getCategories()
+        _hasCustomMapping.value = repository.hasCustomMappingAvailable()
+        _categoryFlagsMap.value = emptyMap()
+        _expandedCategories.value = emptySet()
+        _expandedFlags.value = emptySet()
+        _isLoading.value = false
+    }
+
+    private fun loadRecentSearches() {
+        val saved = prefs.getStringSet("recent_searches", emptySet()) ?: emptySet()
+        _recentSearches.value = saved.toList().take(10)
+    }
+
+    private fun saveRecentSearch(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        val current = _recentSearches.value.toMutableList()
+        current.remove(trimmed)
+        current.add(0, trimmed)
+        val updated = current.take(10)
+        _recentSearches.value = updated
+        prefs.edit().putStringSet("recent_searches", updated.toSet()).apply()
+    }
+
+    fun clearRecentSearches() {
+        _recentSearches.value = emptyList()
+        prefs.edit().remove("recent_searches").apply()
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShowToast("Search history cleared"))
+        }
+    }
+}

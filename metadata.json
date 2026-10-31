@@ -1,0 +1,6 @@
+{
+  "name": "MetaTools",
+  "description": "MetaTools - Instagram-inspired AMOLED flag explorer for searching, categorizing, copying, and sharing MetaConfig universal flags and sub-flags.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
