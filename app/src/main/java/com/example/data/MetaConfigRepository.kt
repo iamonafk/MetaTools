@@ -177,6 +177,53 @@ class MetaConfigRepository(private val context: Context) {
         parseStream(customFile.inputStream(), customName, isCustom = true)
     }
 
+    suspend fun getAvailableCompareSources(): List<com.example.model.CompareSource> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<com.example.model.CompareSource>(com.example.model.CompareSource.BuiltIn)
+        val customFile = File(context.filesDir, CUSTOM_FILE_NAME)
+        if (customFile.exists()) {
+            val name = prefs.getString(KEY_CUSTOM_FILENAME, "Custom Mapping") ?: "Custom Mapping"
+            list.add(com.example.model.CompareSource.ActiveCustom(name))
+        }
+        list
+    }
+
+    suspend fun loadFlagsFromSource(source: com.example.model.CompareSource): List<UniversalFlag> = withContext(Dispatchers.IO) {
+        when (source) {
+            is com.example.model.CompareSource.BuiltIn -> {
+                val assetStream = context.assets.open(BUILTIN_FILE_NAME)
+                parseFlagsFromStream(assetStream)
+            }
+            is com.example.model.CompareSource.ActiveCustom -> {
+                val customFile = File(context.filesDir, CUSTOM_FILE_NAME)
+                if (customFile.exists()) {
+                    parseFlagsFromStream(customFile.inputStream())
+                } else {
+                    val assetStream = context.assets.open(BUILTIN_FILE_NAME)
+                    parseFlagsFromStream(assetStream)
+                }
+            }
+            is com.example.model.CompareSource.DeviceFile -> {
+                val stream = context.contentResolver.openInputStream(source.uri)
+                    ?: throw IllegalArgumentException("Cannot open stream for ${source.name}")
+                parseFlagsFromStream(stream)
+            }
+        }
+    }
+
+    suspend fun compareMappings(
+        oldSource: com.example.model.CompareSource,
+        newSource: com.example.model.CompareSource
+    ): com.example.model.ComparisonReport = withContext(Dispatchers.Default) {
+        val oldFlags = loadFlagsFromSource(oldSource)
+        val newFlags = loadFlagsFromSource(newSource)
+        MappingCompareEngine.compare(
+            oldFlags = oldFlags,
+            newFlags = newFlags,
+            oldSourceName = oldSource.getLabel(),
+            newSourceName = newSource.getLabel()
+        )
+    }
+
     private fun parseStream(inputStream: InputStream, sourceName: String, isCustom: Boolean): MappingResult {
         return try {
             val flags = parseFlagsFromStream(inputStream)

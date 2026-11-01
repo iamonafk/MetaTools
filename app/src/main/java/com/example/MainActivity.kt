@@ -82,6 +82,26 @@ fun MainScreen(viewModel: MetaToolsViewModel) {
         }
     }
 
+    // SAF File picker for comparison: Old Mapping
+    val oldComparePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val displayName = queryDisplayName(context, uri) ?: "old_mapping.json"
+            viewModel.setOldCompareSourceFromUri(uri, displayName)
+        }
+    }
+
+    // SAF File picker for comparison: New Mapping
+    val newComparePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val displayName = queryDisplayName(context, uri) ?: "new_mapping.json"
+            viewModel.setNewCompareSourceFromUri(uri, displayName)
+        }
+    }
+
     // Handle back button navigation
     BackHandler {
         if (showSettingsSheet) {
@@ -163,7 +183,15 @@ fun MainScreen(viewModel: MetaToolsViewModel) {
                 when (currentTab) {
                     AppTab.HOME -> HomeScreen(viewModel = viewModel)
                     AppTab.FLAGS -> FlagsScreen(viewModel = viewModel)
-                    AppTab.TOOLS -> ToolsScreen(viewModel = viewModel)
+                    AppTab.TOOLS -> ToolsScreen(
+                        viewModel = viewModel,
+                        onPickOldFile = {
+                            oldComparePickerLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                        },
+                        onPickNewFile = {
+                            newComparePickerLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                        }
+                    )
                     AppTab.PROFILE -> ProfileScreen(viewModel = viewModel)
                 }
             }

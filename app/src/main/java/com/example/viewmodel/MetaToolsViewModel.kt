@@ -8,8 +8,12 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.MappingCompareEngine
 import com.example.data.MappingResult
 import com.example.data.MetaConfigRepository
+import com.example.model.CompareFilterTab
+import com.example.model.CompareSource
+import com.example.model.ComparisonReport
 import com.example.model.FlagCategory
 import com.example.model.FlagSearchResult
 import com.example.model.MappingSource
@@ -95,6 +99,28 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
     // Mapping source selector dialog
     private val _showSourceDialog = MutableStateFlow(false)
     val showSourceDialog: StateFlow<Boolean> = _showSourceDialog.asStateFlow()
+
+    // Mapping comparison state
+    private val _availableCompareSources = MutableStateFlow<List<CompareSource>>(listOf(CompareSource.BuiltIn))
+    val availableCompareSources: StateFlow<List<CompareSource>> = _availableCompareSources.asStateFlow()
+
+    private val _oldCompareSource = MutableStateFlow<CompareSource>(CompareSource.BuiltIn)
+    val oldCompareSource: StateFlow<CompareSource> = _oldCompareSource.asStateFlow()
+
+    private val _newCompareSource = MutableStateFlow<CompareSource?>(null)
+    val newCompareSource: StateFlow<CompareSource?> = _newCompareSource.asStateFlow()
+
+    private val _isComparing = MutableStateFlow(false)
+    val isComparing: StateFlow<Boolean> = _isComparing.asStateFlow()
+
+    private val _comparisonReport = MutableStateFlow<ComparisonReport?>(null)
+    val comparisonReport: StateFlow<ComparisonReport?> = _comparisonReport.asStateFlow()
+
+    private val _compareFilterTab = MutableStateFlow(CompareFilterTab.ALL)
+    val compareFilterTab: StateFlow<CompareFilterTab> = _compareFilterTab.asStateFlow()
+
+    private val _compareSearchQuery = MutableStateFlow("")
+    val compareSearchQuery: StateFlow<String> = _compareSearchQuery.asStateFlow()
 
     init {
         loadRecentSearches()
@@ -299,6 +325,7 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
         _categoryFlagsMap.value = emptyMap()
         _expandedCategories.value = emptySet()
         _expandedFlags.value = emptySet()
+        _availableCompareSources.value = repository.getAvailableCompareSources()
         _isLoading.value = false
     }
 
@@ -323,6 +350,114 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().remove("recent_searches").apply()
         viewModelScope.launch {
             _uiEvents.emit(UiEvent.ShowToast("Search history cleared"))
+        }
+    }
+
+    // Comparison actions
+    fun refreshAvailableCompareSources() {
+        viewModelScope.launch {
+            _availableCompareSources.value = repository.getAvailableCompareSources()
+        }
+    }
+
+    fun setOldCompareSource(source: CompareSource) {
+        _oldCompareSource.value = source
+    }
+
+    fun setNewCompareSource(source: CompareSource) {
+        _newCompareSource.value = source
+    }
+
+    fun setOldCompareSourceFromUri(uri: Uri, displayName: String) {
+        _oldCompareSource.value = CompareSource.DeviceFile(uri, displayName)
+    }
+
+    fun setNewCompareSourceFromUri(uri: Uri, displayName: String) {
+        _newCompareSource.value = CompareSource.DeviceFile(uri, displayName)
+    }
+
+    fun swapCompareSources() {
+        val currentOld = _oldCompareSource.value
+        val currentNew = _newCompareSource.value
+        if (currentNew != null) {
+            _oldCompareSource.value = currentNew
+            _newCompareSource.value = currentOld
+        }
+    }
+
+    fun runComparison() {
+        val old = _oldCompareSource.value
+        val new = _newCompareSource.value
+        if (new == null) {
+            viewModelScope.launch {
+                _uiEvents.emit(UiEvent.ShowToast("Please select a New Mapping file to compare"))
+            }
+            return
+        }
+        viewModelScope.launch {
+            _isComparing.value = true
+            try {
+                val report = repository.compareMappings(old, new)
+                _comparisonReport.value = report
+                _uiEvents.emit(
+                    UiEvent.ShowToast(
+                        "Comparison complete: +${report.totalNewCount} new, -${report.totalRemovedCount} removed, ~${report.totalUpdatedCount} updated"
+                    )
+                )
+            } catch (e: Exception) {
+                _uiEvents.emit(UiEvent.ShowToast("Comparison failed: ${e.message}"))
+            } finally {
+                _isComparing.value = false
+            }
+        }
+    }
+
+    fun clearComparison() {
+        _comparisonReport.value = null
+        _compareSearchQuery.value = ""
+        _compareFilterTab.value = CompareFilterTab.ALL
+    }
+
+    fun setCompareFilterTab(tab: CompareFilterTab) {
+        _compareFilterTab.value = tab
+    }
+
+    fun onCompareSearchQueryChanged(query: String) {
+        _compareSearchQuery.value = query
+    }
+
+    fun clearCompareSearch() {
+        _compareSearchQuery.value = ""
+    }
+
+    fun copyText(text: String, label: String = "MetaConfig") {
+        copyToClipboard(text, "Copied $label")
+    }
+
+    fun shareText(text: String, title: String) {
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(text, title))
+        }
+    }
+
+    fun shareComparisonReport(report: ComparisonReport) {
+        val summaryText = MappingCompareEngine.generateTextReport(report)
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(summaryText, "Share Comparison Report"))
+        }
+    }
+
+    fun exportComparisonReportTxt(report: ComparisonReport) {
+        val text = MappingCompareEngine.generateTextReport(report)
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(text, "Export Comparison Report (Text)"))
+        }
+    }
+
+    fun exportComparisonReportJson(report: ComparisonReport) {
+        val json = MappingCompareEngine.generateJsonReport(report)
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShareText(json, "Export Comparison Report (JSON)"))
         }
     }
 }
