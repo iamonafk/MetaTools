@@ -63,7 +63,16 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      isReturnDefaultValues = true
+      all {
+        it.systemProperty("robolectric.dependency.dir", "/home/appuser/.m2/repository/org/robolectric/android-all-instrumented/16-robolectric-13921718-i7")
+        it.systemProperty("robolectric.offline", "true")
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

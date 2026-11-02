@@ -89,6 +89,11 @@ import com.example.ui.theme.WarningYellow
 import com.example.viewmodel.AppTab
 import com.example.viewmodel.MetaToolsViewModel
 
+enum class ActiveToolTab {
+    MAPPING_COMPARE,
+    IBACKUP_CONVERTER
+}
+
 @Composable
 fun ToolsScreen(
     viewModel: MetaToolsViewModel,
@@ -96,6 +101,16 @@ fun ToolsScreen(
     onPickNewFile: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var activeToolTab by remember { mutableStateOf(ActiveToolTab.MAPPING_COMPARE) }
+
+    if (activeToolTab == ActiveToolTab.IBACKUP_CONVERTER) {
+        IBackupConverterScreen(
+            onBack = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
+            modifier = modifier
+        )
+        return
+    }
+
     val scrollState = rememberScrollState()
 
     val availableSources by viewModel.availableCompareSources.collectAsStateWithLifecycle()
@@ -151,6 +166,91 @@ fun ToolsScreen(
                         tint = TextSecondary
                     )
                 }
+            }
+        }
+
+        // Tool Mode Switcher Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(AmoledCard)
+                .border(1.dp, AmoledBorder, RoundedCornerShape(10.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ToolSwitcherTab(
+                title = "Mapping Compare",
+                icon = Icons.Default.CompareArrows,
+                isSelected = activeToolTab == ActiveToolTab.MAPPING_COMPARE,
+                onClick = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
+                modifier = Modifier.weight(1f),
+                testTag = "tab_mapping_compare"
+            )
+            ToolSwitcherTab(
+                title = "iBackup Converter",
+                icon = Icons.Default.SwapVert,
+                isSelected = activeToolTab == ActiveToolTab.IBACKUP_CONVERTER,
+                onClick = { activeToolTab = ActiveToolTab.IBACKUP_CONVERTER },
+                modifier = Modifier.weight(1f),
+                testTag = "tab_ibackup_converter"
+            )
+        }
+
+        // Quick Launch Card for iBackup Converter
+        Card(
+            onClick = { activeToolTab = ActiveToolTab.IBACKUP_CONVERTER },
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AmoledBorder, RoundedCornerShape(12.dp))
+                .testTag("card_open_ibackup_converter"),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = AmoledCard)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AccentGreenContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SwapVert,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "iBackup ↔ JSON Converter",
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Convert Instagram iBackup to JSON or package JSON into .ibackup",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
 
@@ -969,3 +1069,44 @@ private fun UtilityItem(
         }
     }
 }
+
+@Composable
+private fun ToolSwitcherTab(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    testTag: String = ""
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isSelected) AccentGreenContainer else Color.Transparent)
+            .border(
+                1.dp,
+                if (isSelected) AccentGreen.copy(alpha = 0.5f) else Color.Transparent,
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 10.dp)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isSelected) AccentGreen else TextSecondary,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = title,
+            color = if (isSelected) TextPrimary else TextSecondary,
+            fontSize = 12.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+        )
+    }
+}
+
