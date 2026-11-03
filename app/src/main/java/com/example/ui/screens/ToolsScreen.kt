@@ -91,7 +91,8 @@ import com.example.viewmodel.MetaToolsViewModel
 
 enum class ActiveToolTab {
     MAPPING_COMPARE,
-    IBACKUP_CONVERTER
+    IBACKUP_CONVERTER,
+    FLAG_ANALYSIS
 }
 
 @Composable
@@ -105,6 +106,15 @@ fun ToolsScreen(
 
     if (activeToolTab == ActiveToolTab.IBACKUP_CONVERTER) {
         IBackupConverterScreen(
+            onBack = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
+            modifier = modifier
+        )
+        return
+    }
+
+    if (activeToolTab == ActiveToolTab.FLAG_ANALYSIS) {
+        FlagAnalysisScreen(
+            viewModel = viewModel,
             onBack = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
             modifier = modifier
         )
@@ -177,10 +187,10 @@ fun ToolsScreen(
                 .background(AmoledCard)
                 .border(1.dp, AmoledBorder, RoundedCornerShape(10.dp))
                 .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             ToolSwitcherTab(
-                title = "Mapping Compare",
+                title = "Compare",
                 icon = Icons.Default.CompareArrows,
                 isSelected = activeToolTab == ActiveToolTab.MAPPING_COMPARE,
                 onClick = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
@@ -188,13 +198,94 @@ fun ToolsScreen(
                 testTag = "tab_mapping_compare"
             )
             ToolSwitcherTab(
-                title = "iBackup Converter",
+                title = "Flag Analysis",
+                icon = Icons.Default.Search,
+                isSelected = activeToolTab == ActiveToolTab.FLAG_ANALYSIS,
+                onClick = { activeToolTab = ActiveToolTab.FLAG_ANALYSIS },
+                modifier = Modifier.weight(1.1f),
+                testTag = "tab_flag_analysis"
+            )
+            ToolSwitcherTab(
+                title = "Converter",
                 icon = Icons.Default.SwapVert,
                 isSelected = activeToolTab == ActiveToolTab.IBACKUP_CONVERTER,
                 onClick = { activeToolTab = ActiveToolTab.IBACKUP_CONVERTER },
                 modifier = Modifier.weight(1f),
                 testTag = "tab_ibackup_converter"
             )
+        }
+
+        // Quick Launch Card for Flag Analysis
+        Card(
+            onClick = { activeToolTab = ActiveToolTab.FLAG_ANALYSIS },
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .testTag("card_open_flag_analysis"),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = AmoledCard)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AccentGreenContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Flag Analysis",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(AccentGreen)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "NEW",
+                                color = Color.Black,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Import iBackup/JSON, resolve numeric codes with database, toggle flags, and export",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
 
         // Quick Launch Card for iBackup Converter
@@ -217,13 +308,13 @@ fun ToolsScreen(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(AccentGreenContainer),
+                        .background(Color(0xFF262626)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.SwapVert,
                         contentDescription = null,
-                        tint = AccentGreen,
+                        tint = Color(0xFF64B5F6),
                         modifier = Modifier.size(22.dp)
                     )
                 }

@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.metatools.flagx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 25001
+    versionName = "2.50.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

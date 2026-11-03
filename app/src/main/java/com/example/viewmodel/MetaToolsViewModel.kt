@@ -8,15 +8,18 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.FlagAnalysisEngine
 import com.example.data.MappingCompareEngine
 import com.example.data.MappingResult
 import com.example.data.MetaConfigRepository
 import com.example.model.CompareFilterTab
 import com.example.model.CompareSource
 import com.example.model.ComparisonReport
+import com.example.model.FlagAnalysisFilter
 import com.example.model.FlagCategory
 import com.example.model.FlagSearchResult
 import com.example.model.MappingSource
+import com.example.model.ParsedBackupState
 import com.example.model.SubFlag
 import com.example.model.UniversalFlag
 import kotlinx.coroutines.FlowPreview
@@ -459,5 +462,105 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _uiEvents.emit(UiEvent.ShareText(json, "Export Comparison Report (JSON)"))
         }
+    }
+
+    // ==========================================
+    // Flag Analysis State & Management
+    // ==========================================
+
+    private val _flagAnalysisState = MutableStateFlow<ParsedBackupState?>(null)
+    val flagAnalysisState: StateFlow<ParsedBackupState?> = _flagAnalysisState.asStateFlow()
+
+    private val _isAnalyzingBackup = MutableStateFlow(false)
+    val isAnalyzingBackup: StateFlow<Boolean> = _isAnalyzingBackup.asStateFlow()
+
+    private val _flagAnalysisSearchQuery = MutableStateFlow("")
+    val flagAnalysisSearchQuery: StateFlow<String> = _flagAnalysisSearchQuery.asStateFlow()
+
+    private val _flagAnalysisFilter = MutableStateFlow(FlagAnalysisFilter.ALL)
+    val flagAnalysisFilter: StateFlow<FlagAnalysisFilter> = _flagAnalysisFilter.asStateFlow()
+
+    fun loadBackupForAnalysis(content: String, fileName: String) {
+        viewModelScope.launch {
+            _isAnalyzingBackup.value = true
+            try {
+                val mappingFlags = repository.getAllFlags()
+                val result = FlagAnalysisEngine.parseBackup(content, fileName, mappingFlags)
+                if (result.isSuccess) {
+                    val state = result.getOrThrow()
+                    _flagAnalysisState.value = state
+                    _flagAnalysisSearchQuery.value = ""
+                    _flagAnalysisFilter.value = FlagAnalysisFilter.ALL
+                    _uiEvents.emit(
+                        UiEvent.ShowToast(
+                            "Loaded ${state.fileName}: ${state.totalUniversalFlags} flags, ${state.totalSubFlags} sub-flags"
+                        )
+                    )
+                } else {
+                    _uiEvents.emit(UiEvent.ShowToast("Analysis failed: ${result.exceptionOrNull()?.message}"))
+                }
+            } catch (e: Exception) {
+                _uiEvents.emit(UiEvent.ShowToast("Error loading backup: ${e.message}"))
+            } finally {
+                _isAnalyzingBackup.value = false
+            }
+        }
+    }
+
+    fun toggleAnalysisSubFlag(universalCode: String, subCode: String) {
+        val current = _flagAnalysisState.value ?: return
+        val updatedFlags = FlagAnalysisEngine.toggleSubFlagState(current.flags, universalCode, subCode)
+        _flagAnalysisState.value = current.copy(flags = updatedFlags)
+    }
+
+    fun setAnalysisCategoryState(category: String, enable: Boolean) {
+        val current = _flagAnalysisState.value ?: return
+        val updatedFlags = FlagAnalysisEngine.setCategoryFlagsState(current.flags, category, enable)
+        _flagAnalysisState.value = current.copy(flags = updatedFlags)
+        viewModelScope.launch {
+            _uiEvents.emit(
+                UiEvent.ShowToast("${if (enable) "Enabled" else "Disabled"} all flags in $category")
+            )
+        }
+    }
+
+    fun setAnalysisAllFlagsState(enable: Boolean) {
+        val current = _flagAnalysisState.value ?: return
+        val updatedFlags = FlagAnalysisEngine.setAllFlagsState(current.flags, enable)
+        _flagAnalysisState.value = current.copy(flags = updatedFlags)
+        viewModelScope.launch {
+            _uiEvents.emit(
+                UiEvent.ShowToast("${if (enable) "Enabled" else "Disabled"} all flags in backup")
+            )
+        }
+    }
+
+    fun resetAnalysisSubFlag(universalCode: String, subCode: String) {
+        val current = _flagAnalysisState.value ?: return
+        val updatedFlags = FlagAnalysisEngine.resetSubFlagToOriginal(current.flags, universalCode, subCode)
+        _flagAnalysisState.value = current.copy(flags = updatedFlags)
+    }
+
+    fun resetAllAnalysisFlags() {
+        val current = _flagAnalysisState.value ?: return
+        val updatedFlags = FlagAnalysisEngine.resetAllFlagsToOriginal(current.flags)
+        _flagAnalysisState.value = current.copy(flags = updatedFlags)
+        viewModelScope.launch {
+            _uiEvents.emit(UiEvent.ShowToast("Reset all modified flags to original state"))
+        }
+    }
+
+    fun setFlagAnalysisSearchQuery(query: String) {
+        _flagAnalysisSearchQuery.value = query
+    }
+
+    fun setFlagAnalysisFilter(filter: FlagAnalysisFilter) {
+        _flagAnalysisFilter.value = filter
+    }
+
+    fun clearFlagAnalysis() {
+        _flagAnalysisState.value = null
+        _flagAnalysisSearchQuery.value = ""
+        _flagAnalysisFilter.value = FlagAnalysisFilter.ALL
     }
 }
