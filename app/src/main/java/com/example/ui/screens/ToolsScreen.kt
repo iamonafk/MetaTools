@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -91,8 +92,9 @@ import com.example.viewmodel.MetaToolsViewModel
 
 enum class ActiveToolTab {
     MAPPING_COMPARE,
-    IBACKUP_CONVERTER,
-    FLAG_ANALYSIS
+    FLAG_INFORMATION,
+    FLAG_ANALYSIS,
+    IBACKUP_CONVERTER
 }
 
 @Composable
@@ -103,6 +105,14 @@ fun ToolsScreen(
     modifier: Modifier = Modifier
 ) {
     var activeToolTab by remember { mutableStateOf(ActiveToolTab.MAPPING_COMPARE) }
+
+    if (activeToolTab == ActiveToolTab.FLAG_INFORMATION) {
+        FlagInformationScreen(
+            onBack = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
+            modifier = modifier
+        )
+        return
+    }
 
     if (activeToolTab == ActiveToolTab.IBACKUP_CONVERTER) {
         IBackupConverterScreen(
@@ -198,11 +208,19 @@ fun ToolsScreen(
                 testTag = "tab_mapping_compare"
             )
             ToolSwitcherTab(
-                title = "Flag Analysis",
+                title = "Flag Info",
+                icon = Icons.Default.Info,
+                isSelected = activeToolTab == ActiveToolTab.FLAG_INFORMATION,
+                onClick = { activeToolTab = ActiveToolTab.FLAG_INFORMATION },
+                modifier = Modifier.weight(1.05f),
+                testTag = "tab_flag_information"
+            )
+            ToolSwitcherTab(
+                title = "Analysis",
                 icon = Icons.Default.Search,
                 isSelected = activeToolTab == ActiveToolTab.FLAG_ANALYSIS,
                 onClick = { activeToolTab = ActiveToolTab.FLAG_ANALYSIS },
-                modifier = Modifier.weight(1.1f),
+                modifier = Modifier.weight(1.05f),
                 testTag = "tab_flag_analysis"
             )
             ToolSwitcherTab(
@@ -215,12 +233,85 @@ fun ToolsScreen(
             )
         }
 
+        // Quick Launch Card for Flag Information (New)
+        Card(
+            onClick = { activeToolTab = ActiveToolTab.FLAG_INFORMATION },
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .testTag("card_open_flag_information"),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = AmoledCard)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AccentGreenContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Flag Information",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(AccentGreen)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "NEW",
+                                color = Color.Black,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Paste raw flag info, separate into editable cards, copy fields individually, or copy all",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
         // Quick Launch Card for Flag Analysis
         Card(
             onClick = { activeToolTab = ActiveToolTab.FLAG_ANALYSIS },
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .border(1.dp, AmoledBorder, RoundedCornerShape(12.dp))
                 .testTag("card_open_flag_analysis"),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = AmoledCard)

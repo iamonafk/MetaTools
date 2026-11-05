@@ -140,7 +140,7 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "MetaTools v2.50.1",
+                    text = "MetaTools v2.10.45",
                     color = TextPrimary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
