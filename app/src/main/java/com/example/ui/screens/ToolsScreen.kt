@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -92,6 +93,7 @@ import com.example.viewmodel.MetaToolsViewModel
 
 enum class ActiveToolTab {
     MAPPING_COMPARE,
+    CODE_TO_NAME_CONVERTER,
     FLAG_INFORMATION,
     FLAG_ANALYSIS,
     IBACKUP_CONVERTER
@@ -105,6 +107,15 @@ fun ToolsScreen(
     modifier: Modifier = Modifier
 ) {
     var activeToolTab by remember { mutableStateOf(ActiveToolTab.MAPPING_COMPARE) }
+
+    if (activeToolTab == ActiveToolTab.CODE_TO_NAME_CONVERTER) {
+        JsonCodeToNameConverterScreen(
+            viewModel = viewModel,
+            onBack = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
+            modifier = modifier
+        )
+        return
+    }
 
     if (activeToolTab == ActiveToolTab.FLAG_INFORMATION) {
         FlagInformationScreen(
@@ -208,11 +219,19 @@ fun ToolsScreen(
                 testTag = "tab_mapping_compare"
             )
             ToolSwitcherTab(
+                title = "Code➔Name",
+                icon = Icons.Default.AutoFixHigh,
+                isSelected = activeToolTab == ActiveToolTab.CODE_TO_NAME_CONVERTER,
+                onClick = { activeToolTab = ActiveToolTab.CODE_TO_NAME_CONVERTER },
+                modifier = Modifier.weight(1.1f),
+                testTag = "tab_code_to_name"
+            )
+            ToolSwitcherTab(
                 title = "Flag Info",
                 icon = Icons.Default.Info,
                 isSelected = activeToolTab == ActiveToolTab.FLAG_INFORMATION,
                 onClick = { activeToolTab = ActiveToolTab.FLAG_INFORMATION },
-                modifier = Modifier.weight(1.05f),
+                modifier = Modifier.weight(1f),
                 testTag = "tab_flag_information"
             )
             ToolSwitcherTab(
@@ -220,7 +239,7 @@ fun ToolsScreen(
                 icon = Icons.Default.Search,
                 isSelected = activeToolTab == ActiveToolTab.FLAG_ANALYSIS,
                 onClick = { activeToolTab = ActiveToolTab.FLAG_ANALYSIS },
-                modifier = Modifier.weight(1.05f),
+                modifier = Modifier.weight(1f),
                 testTag = "tab_flag_analysis"
             )
             ToolSwitcherTab(
@@ -233,12 +252,85 @@ fun ToolsScreen(
             )
         }
 
+        // Quick Launch Card for JSON Code to Name Converter (New)
+        Card(
+            onClick = { activeToolTab = ActiveToolTab.CODE_TO_NAME_CONVERTER },
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .testTag("card_open_code_to_name"),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = AmoledCard)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AccentGreenContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoFixHigh,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "JSON Code to Name Converter",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(AccentGreen)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "NEW",
+                                color = Color.Black,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Convert numeric-code JSON backups into readable name-based JSON backups with coverage analysis",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
         // Quick Launch Card for Flag Information (New)
         Card(
             onClick = { activeToolTab = ActiveToolTab.FLAG_INFORMATION },
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                .border(1.dp, AmoledBorder, RoundedCornerShape(12.dp))
                 .testTag("card_open_flag_information"),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = AmoledCard)
