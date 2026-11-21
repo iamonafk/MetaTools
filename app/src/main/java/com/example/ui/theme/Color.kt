@@ -20,4 +20,5 @@ val AccentGreenBorder = Color(0xFF1B4D2B)
 
 val DangerRed = Color(0xFFEF4444)
 val WarningYellow = Color(0xFFF59E0B)
+val UpdatedOrange = Color(0xFFFF9800)
 val InfoBlue = Color(0xFF38BDF8)

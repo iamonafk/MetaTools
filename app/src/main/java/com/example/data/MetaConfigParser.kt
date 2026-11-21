@@ -131,8 +131,9 @@ object MetaConfigParser {
         val name = flagName.lowercase(Locale.ROOT)
 
         // Specific prefixes / namespaces first
-        if (name.contains("threads") || name.startsWith("p92") || name.contains("barcelona") ||
-            name.startsWith("bcn") || name.startsWith("b4a") || name.contains("thrid") || name.contains("th4a")
+        if (name.contains("threads") || name.startsWith("p92") || name.contains("_p92") || name.contains("p92_") ||
+            name.contains("barcelona") || name.startsWith("bcn") || name.startsWith("b4a") ||
+            name.contains("thrid") || name.contains("th4a")
         ) {
             return "Threads App/P92"
         }

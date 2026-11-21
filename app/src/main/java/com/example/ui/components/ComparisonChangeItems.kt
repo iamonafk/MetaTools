@@ -45,8 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.NewFlagItem
 import com.example.model.NewSubFlagItem
+import com.example.model.PotentialRenameCandidate
 import com.example.model.RemovedFlagItem
 import com.example.model.RemovedSubFlagItem
+import com.example.model.UnchangedFlagItem
 import com.example.model.UpdatedFlagCodeItem
 import com.example.model.UpdatedSubFlagItem
 import com.example.ui.theme.AccentGreen
@@ -59,6 +61,7 @@ import com.example.ui.theme.DangerRed
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextTertiary
+import com.example.ui.theme.UpdatedOrange
 import com.example.ui.theme.WarningYellow
 
 // 1. Newly Added Universal Flag Card
@@ -68,7 +71,8 @@ fun NewUniversalFlagCard(
     onCopyName: () -> Unit,
     onCopyCode: () -> Unit,
     onShare: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onInspect: () -> Unit = {}
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -78,6 +82,7 @@ fun NewUniversalFlagCard(
             .clip(RoundedCornerShape(10.dp))
             .background(AmoledCard)
             .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
             .padding(12.dp)
             .testTag("compare_new_flag_${item.flag.name}")
     ) {
@@ -241,7 +246,8 @@ fun NewSubFlagCard(
     onCopySubFlagName: () -> Unit,
     onCopySubFlagCode: () -> Unit,
     onShare: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onInspect: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -249,6 +255,7 @@ fun NewSubFlagCard(
             .clip(RoundedCornerShape(10.dp))
             .background(AmoledCard)
             .border(1.dp, AccentGreen.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
             .padding(12.dp)
             .testTag("compare_new_subflag_${item.subFlag.name}")
     ) {
@@ -368,7 +375,8 @@ fun RemovedUniversalFlagCard(
     onCopyName: () -> Unit,
     onCopyCode: () -> Unit,
     onShare: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onInspect: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -376,6 +384,7 @@ fun RemovedUniversalFlagCard(
             .clip(RoundedCornerShape(10.dp))
             .background(AmoledCard)
             .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
             .padding(12.dp)
             .testTag("compare_removed_flag_${item.flag.name}")
     ) {
@@ -487,7 +496,8 @@ fun RemovedSubFlagCard(
     onCopySubFlagName: () -> Unit,
     onCopySubFlagCode: () -> Unit,
     onShare: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onInspect: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -495,6 +505,7 @@ fun RemovedSubFlagCard(
             .clip(RoundedCornerShape(10.dp))
             .background(AmoledCard)
             .border(1.dp, DangerRed.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
             .padding(12.dp)
             .testTag("compare_removed_subflag_${item.subFlag.name}")
     ) {
@@ -614,14 +625,16 @@ fun UpdatedSubFlagCard(
     onCopyOldCode: () -> Unit,
     onCopyNewCode: () -> Unit,
     onShare: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onInspect: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(AmoledCard)
-            .border(1.dp, WarningYellow.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .border(1.dp, UpdatedOrange.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
             .padding(12.dp)
             .testTag("compare_updated_subflag_${item.subFlagName}")
     ) {
@@ -634,12 +647,12 @@ fun UpdatedSubFlagCard(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
-                    .background(WarningYellow.copy(alpha = 0.15f))
+                    .background(UpdatedOrange.copy(alpha = 0.16f))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
                     text = "STATUS: UPDATED",
-                    color = WarningYellow,
+                    color = UpdatedOrange,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -739,7 +752,7 @@ fun UpdatedSubFlagCard(
             Icon(
                 imageVector = Icons.Default.ArrowForward,
                 contentDescription = "Changed to",
-                tint = WarningYellow,
+                tint = UpdatedOrange,
                 modifier = Modifier.size(18.dp)
             )
 
@@ -785,14 +798,16 @@ fun UpdatedUniversalFlagCodeCard(
     onCopyOldCode: () -> Unit,
     onCopyNewCode: () -> Unit,
     onShare: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onInspect: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(AmoledCard)
-            .border(1.dp, WarningYellow.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .border(1.dp, UpdatedOrange.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
             .padding(12.dp)
             .testTag("compare_updated_flagcode_${item.flagName}")
     ) {
@@ -804,12 +819,12 @@ fun UpdatedUniversalFlagCodeCard(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
-                    .background(WarningYellow.copy(alpha = 0.15f))
+                    .background(UpdatedOrange.copy(alpha = 0.16f))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
                     text = "UNIVERSAL CODE CHANGED",
-                    color = WarningYellow,
+                    color = UpdatedOrange,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -896,7 +911,7 @@ fun UpdatedUniversalFlagCodeCard(
             Icon(
                 imageVector = Icons.Default.ArrowForward,
                 contentDescription = "Changed to",
-                tint = WarningYellow,
+                tint = UpdatedOrange,
                 modifier = Modifier.size(18.dp)
             )
 
@@ -929,6 +944,197 @@ fun UpdatedUniversalFlagCodeCard(
                     )
                 }
             }
+        }
+    }
+}
+
+// 7. Unchanged Universal Flag Card (Neutral Gray)
+@Composable
+fun UnchangedUniversalFlagCard(
+    item: UnchangedFlagItem,
+    onCopyName: () -> Unit,
+    onCopyCode: () -> Unit,
+    onInspect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(AmoledCard)
+            .border(1.dp, AmoledBorder, RoundedCornerShape(10.dp))
+            .clickable(onClick = onInspect)
+            .padding(12.dp)
+            .testTag("compare_unchanged_flag_${item.flag.name}")
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(TextSecondary.copy(alpha = 0.14f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "UNCHANGED",
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = item.flag.category,
+                    color = TextTertiary,
+                    fontSize = 11.sp
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(AmoledBackground)
+                    .border(1.dp, AmoledBorder, RoundedCornerShape(4.dp))
+                    .clickable(onClick = onCopyCode)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = item.flag.code,
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(AmoledBackground)
+                .clickable(onClick = onCopyName)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = item.flag.name,
+                color = TextPrimary,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "${item.flag.subFlags.size} subflags",
+                color = TextTertiary,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+// 8. Potential Rename Candidate Card
+@Composable
+fun PotentialRenameCandidateCard(
+    candidate: PotentialRenameCandidate,
+    onInspectOld: () -> Unit,
+    onInspectNew: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(AmoledCard)
+            .border(1.dp, WarningYellow.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(WarningYellow.copy(alpha = 0.16f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "POSSIBLE RENAME (${candidate.scope})",
+                    color = WarningYellow,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Text(
+                text = "Shared Code: ${candidate.sharedCode}",
+                color = TextSecondary,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (candidate.parentFlagName != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Parent: ${candidate.parentFlagName}",
+                color = TextTertiary,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(AmoledBackground)
+                .clickable(onClick = onInspectOld)
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("OLD: ", color = DangerRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = candidate.oldName,
+                color = TextPrimary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(AmoledBackground)
+                .clickable(onClick = onInspectNew)
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("NEW: ", color = AccentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = candidate.newName,
+                color = TextPrimary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }

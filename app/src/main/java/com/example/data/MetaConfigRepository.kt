@@ -187,41 +187,176 @@ class MetaConfigRepository(private val context: Context) {
         list
     }
 
-    suspend fun loadFlagsFromSource(source: com.example.model.CompareSource): List<UniversalFlag> = withContext(Dispatchers.IO) {
+    suspend fun loadDiagnosticsFromSource(source: com.example.model.CompareSource): com.example.model.MappingParseDiagnostics = withContext(Dispatchers.IO) {
         when (source) {
             is com.example.model.CompareSource.BuiltIn -> {
                 val assetStream = context.assets.open(BUILTIN_FILE_NAME)
-                parseFlagsFromStream(assetStream)
+                MappingDiagnosticsParser.parseStream(assetStream, source.getLabel())
             }
             is com.example.model.CompareSource.ActiveCustom -> {
                 val customFile = File(context.filesDir, CUSTOM_FILE_NAME)
                 if (customFile.exists()) {
-                    parseFlagsFromStream(customFile.inputStream())
+                    MappingDiagnosticsParser.parseStream(customFile.inputStream(), source.getLabel(), customFile.length())
                 } else {
                     val assetStream = context.assets.open(BUILTIN_FILE_NAME)
-                    parseFlagsFromStream(assetStream)
+                    MappingDiagnosticsParser.parseStream(assetStream, source.getLabel())
                 }
             }
             is com.example.model.CompareSource.DeviceFile -> {
                 val stream = context.contentResolver.openInputStream(source.uri)
                     ?: throw IllegalArgumentException("Cannot open stream for ${source.name}")
-                parseFlagsFromStream(stream)
+                MappingDiagnosticsParser.parseStream(stream, source.getLabel())
+            }
+            is com.example.model.CompareSource.PastedJson -> {
+                MappingDiagnosticsParser.parseJsonString(source.rawJson, source.getLabel())
             }
         }
+    }
+
+    suspend fun loadFlagsFromSource(source: com.example.model.CompareSource): List<UniversalFlag> = withContext(Dispatchers.IO) {
+        loadDiagnosticsFromSource(source).validFlags
     }
 
     suspend fun compareMappings(
         oldSource: com.example.model.CompareSource,
         newSource: com.example.model.CompareSource
     ): com.example.model.ComparisonReport = withContext(Dispatchers.Default) {
-        val oldFlags = loadFlagsFromSource(oldSource)
-        val newFlags = loadFlagsFromSource(newSource)
-        MappingCompareEngine.compare(
-            oldFlags = oldFlags,
-            newFlags = newFlags,
+        val oldDiag = loadDiagnosticsFromSource(oldSource)
+        val newDiag = loadDiagnosticsFromSource(newSource)
+        if (!oldDiag.isValid) {
+            throw IllegalArgumentException("Old mapping invalid: ${oldDiag.validationError ?: "No valid entries"}")
+        }
+        if (!newDiag.isValid) {
+            throw IllegalArgumentException("New mapping invalid: ${newDiag.validationError ?: "No valid entries"}")
+        }
+        MappingCompareEngine.compareWithDiagnostics(
+            oldFlags = oldDiag.validFlags,
+            newFlags = newDiag.validFlags,
             oldSourceName = oldSource.getLabel(),
-            newSourceName = newSource.getLabel()
+            newSourceName = newSource.getLabel(),
+            oldDiagnostics = oldDiag,
+            newDiagnostics = newDiag
         )
+    }
+
+    private fun historyDir(): File {
+        return File(context.filesDir, "compare_history").apply {
+            if (!exists()) mkdirs()
+        }
+    }
+
+    suspend fun saveComparisonToHistory(report: com.example.model.ComparisonReport): com.example.model.CompareHistoryRecord = withContext(Dispatchers.IO) {
+        val id = "cmp_${report.summary.timestamp}"
+        val snapshotFile = File(historyDir(), "$id.json")
+        val snapshotJson = MappingCompareEngine.serializeSnapshot(report)
+        snapshotFile.writeText(snapshotJson)
+
+        val record = com.example.model.CompareHistoryRecord(
+            id = id,
+            oldSourceName = report.summary.oldSourceName,
+            newSourceName = report.summary.newSourceName,
+            totalOldFlags = report.summary.totalOldFlags,
+            totalNewFlags = report.summary.totalNewFlags,
+            newCount = report.totalNewCount,
+            removedCount = report.totalRemovedCount,
+            updatedCount = report.totalUpdatedCount,
+            unchangedCount = report.summary.unchangedFlagsCount,
+            healthScore = report.summary.newHealthScore,
+            timestamp = report.summary.timestamp,
+            hasSnapshotFile = true
+        )
+
+        val existing = loadCompareHistoryList().filterNot { it.id == id }.toMutableList()
+        existing.add(0, record)
+        val trimmed = existing.take(20)
+        // Remove stale snapshot files beyond 20
+        val keepIds = trimmed.map { "${it.id}.json" }.toSet()
+        historyDir().listFiles()?.forEach { f ->
+            if (f.name.startsWith("cmp_") && !keepIds.contains(f.name)) {
+                f.delete()
+            }
+        }
+        saveHistoryMetadataList(trimmed)
+        prefs.edit().putString("key_last_compare_id", id).apply()
+        record
+    }
+
+    suspend fun loadCompareHistoryList(): List<com.example.model.CompareHistoryRecord> = withContext(Dispatchers.IO) {
+        val raw = prefs.getString("key_compare_history_index", null) ?: return@withContext emptyList()
+        return@withContext try {
+            val arr = org.json.JSONArray(raw)
+            val list = ArrayList<com.example.model.CompareHistoryRecord>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val id = o.getString("id")
+                val hasFile = File(historyDir(), "$id.json").exists()
+                list.add(
+                    com.example.model.CompareHistoryRecord(
+                        id = id,
+                        oldSourceName = o.getString("oldSourceName"),
+                        newSourceName = o.getString("newSourceName"),
+                        totalOldFlags = o.optInt("totalOldFlags", 0),
+                        totalNewFlags = o.optInt("totalNewFlags", 0),
+                        newCount = o.optInt("newCount", 0),
+                        removedCount = o.optInt("removedCount", 0),
+                        updatedCount = o.optInt("updatedCount", 0),
+                        unchangedCount = o.optInt("unchangedCount", 0),
+                        healthScore = o.optInt("healthScore", 100),
+                        timestamp = o.optLong("timestamp", 0L),
+                        hasSnapshotFile = hasFile
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun loadComparisonHistorySnapshot(id: String): com.example.model.ComparisonReport? = withContext(Dispatchers.IO) {
+        val file = File(historyDir(), "$id.json")
+        if (!file.exists()) return@withContext null
+        return@withContext MappingCompareEngine.deserializeSnapshot(file.readText())
+    }
+
+    suspend fun loadLastComparisonSnapshot(): com.example.model.ComparisonReport? = withContext(Dispatchers.IO) {
+        val lastId = prefs.getString("key_last_compare_id", null) ?: return@withContext null
+        loadComparisonHistorySnapshot(lastId)
+    }
+
+    suspend fun deleteComparisonHistoryItem(id: String): List<com.example.model.CompareHistoryRecord> = withContext(Dispatchers.IO) {
+        File(historyDir(), "$id.json").delete()
+        if (prefs.getString("key_last_compare_id", null) == id) {
+            prefs.edit().remove("key_last_compare_id").apply()
+        }
+        val updated = loadCompareHistoryList().filterNot { it.id == id }
+        saveHistoryMetadataList(updated)
+        updated
+    }
+
+    suspend fun clearAllComparisonHistory() = withContext(Dispatchers.IO) {
+        historyDir().listFiles()?.forEach { it.delete() }
+        prefs.edit().remove("key_compare_history_index").remove("key_last_compare_id").apply()
+    }
+
+    private fun saveHistoryMetadataList(list: List<com.example.model.CompareHistoryRecord>) {
+        val arr = org.json.JSONArray()
+        for (item in list) {
+            arr.put(org.json.JSONObject().apply {
+                put("id", item.id)
+                put("oldSourceName", item.oldSourceName)
+                put("newSourceName", item.newSourceName)
+                put("totalOldFlags", item.totalOldFlags)
+                put("totalNewFlags", item.totalNewFlags)
+                put("newCount", item.newCount)
+                put("removedCount", item.removedCount)
+                put("updatedCount", item.updatedCount)
+                put("unchangedCount", item.unchangedCount)
+                put("healthScore", item.healthScore)
+                put("timestamp", item.timestamp)
+            })
+        }
+        prefs.edit().putString("key_compare_history_index", arr.toString()).apply()
     }
 
     private fun parseStream(inputStream: InputStream, sourceName: String, isCustom: Boolean): MappingResult {
