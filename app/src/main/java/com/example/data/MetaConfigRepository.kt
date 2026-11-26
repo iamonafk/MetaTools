@@ -26,6 +26,8 @@ class MetaConfigRepository(private val context: Context) {
         private const val KEY_CUSTOM_FILENAME = "key_custom_filename"
         private const val CUSTOM_FILE_NAME = "custom_mapping.json"
         private const val BUILTIN_FILE_NAME = "Askxtylishh.json"
+        private const val KEY_FAVORITE_FLAGS = "key_favorite_universal_flags"
+        private const val KEY_COMPARE_SEARCH_HISTORY = "key_compare_search_history"
     }
 
     private var cachedFlags: List<UniversalFlag> = emptyList()
@@ -237,6 +239,54 @@ class MetaConfigRepository(private val context: Context) {
             oldDiagnostics = oldDiag,
             newDiagnostics = newDiag
         )
+    }
+
+    suspend fun compareMultipleMappings(
+        sources: List<com.example.model.CompareSource>
+    ): com.example.model.MultiFileComparisonReport = withContext(Dispatchers.Default) {
+        val loaded = sources.mapIndexed { index, src ->
+            val diag = loadDiagnosticsFromSource(src)
+            if (!diag.isValid) {
+                throw IllegalArgumentException("Source #${index + 1} (${src.getLabel()}) invalid: ${diag.validationError ?: "No valid entries"}")
+            }
+            val label = "${index + 1}. ${src.getLabel()}"
+            label to diag
+        }
+        MappingIntelligenceAnalyzer.compareMultipleMappings(loaded)
+    }
+
+    fun getFavoriteFlagNames(): Set<String> {
+        return prefs.getStringSet(KEY_FAVORITE_FLAGS, emptySet())?.toSet() ?: emptySet()
+    }
+
+    fun toggleFavoriteFlag(flagName: String): Set<String> {
+        val current = getFavoriteFlagNames().toMutableSet()
+        if (!current.add(flagName)) {
+            current.remove(flagName)
+        }
+        prefs.edit().putStringSet(KEY_FAVORITE_FLAGS, current).apply()
+        return current
+    }
+
+    fun getCompareSearchHistory(): List<String> {
+        val raw = prefs.getString(KEY_COMPARE_SEARCH_HISTORY, "") ?: ""
+        if (raw.isBlank()) return emptyList()
+        return raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.take(12)
+    }
+
+    fun saveCompareSearchQuery(query: String): List<String> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return getCompareSearchHistory()
+        val list = getCompareSearchHistory().toMutableList()
+        list.removeAll { it.equals(trimmed, ignoreCase = true) }
+        list.add(0, trimmed)
+        val trimmedList = list.take(12)
+        prefs.edit().putString(KEY_COMPARE_SEARCH_HISTORY, trimmedList.joinToString("\n")).apply()
+        return trimmedList
+    }
+
+    fun clearCompareSearchHistory() {
+        prefs.edit().remove(KEY_COMPARE_SEARCH_HISTORY).apply()
     }
 
     private fun historyDir(): File {

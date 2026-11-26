@@ -33,6 +33,8 @@ object MappingDiagnosticsParser {
         val malformedEntries = ArrayList<DiagnosticIssue>()
         val missingNameEntries = ArrayList<DiagnosticIssue>()
         val unknownCategoryEntries = ArrayList<DiagnosticIssue>()
+        val emptySubFlagEntries = ArrayList<DiagnosticIssue>()
+        val subFlagConsistencyIssues = ArrayList<DiagnosticIssue>()
 
         val seenUniversalNames = HashSet<String>(6000)
         val seenUniversalCodes = HashSet<String>(6000)
@@ -56,6 +58,8 @@ object MappingDiagnosticsParser {
                 malformedEntries = malformedEntries,
                 missingNameEntries = missingNameEntries,
                 unknownCategoryEntries = unknownCategoryEntries,
+                emptySubFlagEntries = emptySubFlagEntries,
+                subFlagConsistencyIssues = subFlagConsistencyIssues,
                 seenUniversalNames = seenUniversalNames,
                 seenUniversalCodes = seenUniversalCodes
             ) { count, subCount ->
@@ -77,7 +81,9 @@ object MappingDiagnosticsParser {
                 missingNameEntries = missingNameEntries,
                 unknownCategoryEntries = unknownCategoryEntries,
                 isValid = false,
-                validationError = e.localizedMessage ?: "Invalid JSON mapping format"
+                validationError = e.localizedMessage ?: "Invalid JSON mapping format",
+                emptySubFlagEntries = emptySubFlagEntries,
+                subFlagConsistencyIssues = subFlagConsistencyIssues
             )
         }
     }
@@ -93,6 +99,8 @@ object MappingDiagnosticsParser {
         malformedEntries: ArrayList<DiagnosticIssue>,
         missingNameEntries: ArrayList<DiagnosticIssue>,
         unknownCategoryEntries: ArrayList<DiagnosticIssue>,
+        emptySubFlagEntries: ArrayList<DiagnosticIssue>,
+        subFlagConsistencyIssues: ArrayList<DiagnosticIssue>,
         seenUniversalNames: HashSet<String>,
         seenUniversalCodes: HashSet<String>,
         onCountsReady: (Int, Int) -> Unit
@@ -233,8 +241,8 @@ object MappingDiagnosticsParser {
 
             // Parse subflags cleanly without confusing universal code & subflag code
             val subFlags = ArrayList<SubFlag>()
-            val seenSubNames = HashSet<String>()
-            val seenSubCodes = HashSet<String>()
+            val seenSubNames = HashMap<String, String>()
+            val seenSubCodes = HashMap<String, String>()
             var hasDanglingSubPart = false
 
             var i = 2
@@ -253,12 +261,34 @@ object MappingDiagnosticsParser {
                                 reason = "Subflag code '$subCode' is missing its subflag name"
                             )
                         )
+                    } else {
+                        emptySubFlagEntries.add(
+                            DiagnosticIssue(
+                                type = DiagnosticIssueType.EMPTY_SUBFLAG,
+                                entryIndex = idx,
+                                rawEntry = trimmed,
+                                flagName = universalName,
+                                flagCode = universalCode,
+                                reason = "Trailing empty subflag delimiter in '$universalName'"
+                            )
+                        )
                     }
                     break
                 }
 
                 val subName = parts[i + 1].trim()
-                if (subCode.isEmpty() || subName.isEmpty()) {
+                if (subCode.isEmpty() && subName.isEmpty()) {
+                    emptySubFlagEntries.add(
+                        DiagnosticIssue(
+                            type = DiagnosticIssueType.EMPTY_SUBFLAG,
+                            entryIndex = idx,
+                            rawEntry = trimmed,
+                            flagName = universalName,
+                            flagCode = universalCode,
+                            reason = "Empty subflag segment inside '$universalName'"
+                        )
+                    )
+                } else if (subCode.isEmpty() || subName.isEmpty()) {
                     missingNameEntries.add(
                         DiagnosticIssue(
                             type = DiagnosticIssueType.MISSING_NAME,
@@ -270,7 +300,9 @@ object MappingDiagnosticsParser {
                         )
                     )
                 } else {
-                    if (!seenSubNames.add(subName) || !seenSubCodes.add(subCode)) {
+                    val prevCodeForName = seenSubNames.putIfAbsent(subName, subCode)
+                    val prevNameForCode = seenSubCodes.putIfAbsent(subCode, subName)
+                    if (prevCodeForName != null || prevNameForCode != null) {
                         duplicateSubFlagEntries.add(
                             DiagnosticIssue(
                                 type = DiagnosticIssueType.DUPLICATE_SUBFLAG,
@@ -281,6 +313,18 @@ object MappingDiagnosticsParser {
                                 reason = "Duplicate subflag '$subName' ($subCode) inside '$universalName'"
                             )
                         )
+                        if (prevNameForCode != null && prevNameForCode != subName) {
+                            subFlagConsistencyIssues.add(
+                                DiagnosticIssue(
+                                    type = DiagnosticIssueType.SUBFLAG_CODE_CONFLICT,
+                                    entryIndex = idx,
+                                    rawEntry = trimmed,
+                                    flagName = universalName,
+                                    flagCode = universalCode,
+                                    reason = "Subflag code '$subCode' maps to both '$prevNameForCode' and '$subName' in '$universalName'"
+                                )
+                            )
+                        }
                     }
                     subFlags.add(
                         SubFlag(
@@ -343,7 +387,9 @@ object MappingDiagnosticsParser {
             missingNameEntries = missingNameEntries,
             unknownCategoryEntries = unknownCategoryEntries,
             isValid = isValid,
-            validationError = validationError
+            validationError = validationError,
+            emptySubFlagEntries = emptySubFlagEntries,
+            subFlagConsistencyIssues = subFlagConsistencyIssues
         )
     }
 

@@ -1,9 +1,10 @@
 package com.example.ui.screens
 
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,21 +24,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CompareArrows
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.HealthAndSafety
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -45,22 +39,20 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,43 +60,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
-import com.example.data.MappingCompareEngine
-import com.example.model.CompareFilterTab
-import com.example.model.CompareQuickFilter
-import com.example.model.CompareSectionTab
-import com.example.model.ComparisonReport
+import com.example.model.CompareMode
 import com.example.model.ExportFileFormat
 import com.example.model.ExportReportType
-import com.example.ui.components.ComparisonDashboard
+import com.example.ui.components.CompareModeSelector
 import com.example.ui.components.FlagDetailInspectorDialog
-import com.example.ui.components.MappingAnalyticsSection
-import com.example.ui.components.MappingCatalogSection
 import com.example.ui.components.MappingExportDialog
-import com.example.ui.components.MappingHealthDiagnosticsSection
 import com.example.ui.components.MappingHistorySection
+import com.example.ui.components.MappingResultSectionsHub
 import com.example.ui.components.MappingSourceSelectorCard
-import com.example.ui.components.NewSubFlagCard
-import com.example.ui.components.NewUniversalFlagCard
+import com.example.ui.components.MultiCategoryFilterDialog
+import com.example.ui.components.MultiFileCompareSetupSection
 import com.example.ui.components.PasteMappingJsonDialog
-import com.example.ui.components.RemovedSubFlagCard
-import com.example.ui.components.RemovedUniversalFlagCard
-import com.example.ui.components.UnchangedUniversalFlagCard
-import com.example.ui.components.UpdatedSubFlagCard
-import com.example.ui.components.UpdatedUniversalFlagCodeCard
+import com.example.ui.components.SessionDiffSetupSection
 import com.example.ui.theme.AccentGreen
 import com.example.ui.theme.AccentGreenContainer
 import com.example.ui.theme.AmoledBackground
 import com.example.ui.theme.AmoledBorder
 import com.example.ui.theme.AmoledCard
 import com.example.ui.theme.AmoledCardHover
-import com.example.ui.theme.DangerRed
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextTertiary
-import com.example.ui.theme.UpdatedOrange
-import com.example.ui.theme.WarningYellow
 import com.example.viewmodel.AppTab
 import com.example.viewmodel.MetaToolsViewModel
+import kotlinx.coroutines.launch
 
 enum class ActiveToolTab {
     MAPPING_COMPARE,
@@ -157,36 +137,81 @@ fun ToolsScreen(
         return
     }
 
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val shortcutScrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
     val availableSources by viewModel.availableCompareSources.collectAsStateWithLifecycle()
+    val compareMode by viewModel.compareMode.collectAsStateWithLifecycle()
     val oldSource by viewModel.oldCompareSource.collectAsStateWithLifecycle()
     val newSource by viewModel.newCompareSource.collectAsStateWithLifecycle()
     val oldSourcePreview by viewModel.oldSourcePreview.collectAsStateWithLifecycle()
     val newSourcePreview by viewModel.newSourcePreview.collectAsStateWithLifecycle()
+    val multiSlots by viewModel.multiCompareSlots.collectAsStateWithLifecycle()
     val isComparing by viewModel.isComparing.collectAsStateWithLifecycle()
     val report by viewModel.comparisonReport.collectAsStateWithLifecycle()
-    val sectionTab by viewModel.compareSectionTab.collectAsStateWithLifecycle()
-    val filterTab by viewModel.compareFilterTab.collectAsStateWithLifecycle()
+    val multiFileReport by viewModel.multiFileReport.collectAsStateWithLifecycle()
+    val sessionDiffReport by viewModel.sessionDiffReport.collectAsStateWithLifecycle()
+    val activeResultSection by viewModel.activeResultSection.collectAsStateWithLifecycle()
     val quickFilter by viewModel.compareQuickFilter.collectAsStateWithLifecycle()
     val searchQuery by viewModel.compareSearchQuery.collectAsStateWithLifecycle()
+    val compareSearchHistory by viewModel.compareSearchHistory.collectAsStateWithLifecycle()
     val catalogCategory by viewModel.catalogCategoryFilter.collectAsStateWithLifecycle()
+    val selectedCatalogCategories by viewModel.selectedCatalogCategories.collectAsStateWithLifecycle()
     val catalogSort by viewModel.catalogSortOption.collectAsStateWithLifecycle()
     val catalogScope by viewModel.catalogScopeFilter.collectAsStateWithLifecycle()
+    val namespaceFilter by viewModel.namespaceFilter.collectAsStateWithLifecycle()
+    val exactSubflagCount by viewModel.exactSubflagCountFilter.collectAsStateWithLifecycle()
+    val onlyInOneMapping by viewModel.onlyInOneMappingFilter.collectAsStateWithLifecycle()
+    val favoritesOnly by viewModel.favoritesOnlyFilter.collectAsStateWithLifecycle()
+    val favoriteFlagNames by viewModel.favoriteFlagNames.collectAsStateWithLifecycle()
+    val catalogDisplayMode by viewModel.catalogDisplayMode.collectAsStateWithLifecycle()
+    val expandAllCategories by viewModel.expandAllCatalogCategories.collectAsStateWithLifecycle()
+    val selectedResultKeys by viewModel.selectedResultKeys.collectAsStateWithLifecycle()
+    val searchIndex by viewModel.compareSearchIndex.collectAsStateWithLifecycle()
     val selectedFlagDetail by viewModel.selectedCatalogFlagDetail.collectAsStateWithLifecycle()
     val compareHistory by viewModel.compareHistory.collectAsStateWithLifecycle()
 
     var showExportDialog by remember { mutableStateOf(false) }
+    var showMultiCategoryDialog by remember { mutableStateOf(false) }
     var pasteTargetIsOld by remember { mutableStateOf<Boolean?>(null) }
+    var pasteMultiSlotId by remember { mutableStateOf<String?>(null) }
+    var pendingMultiFileSlotId by remember { mutableStateOf<String?>(null) }
     var pendingExportType by remember { mutableStateOf(ExportReportType.COMPLETE_COMPARISON) }
     var pendingExportFormat by remember { mutableStateOf(ExportFileFormat.JSON) }
+    var pendingExportCategory by remember { mutableStateOf<String?>(null) }
+    var pendingExportSelectedOnly by remember { mutableStateOf(false) }
+
+    val multiSlotFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        val slotId = pendingMultiFileSlotId
+        if (uri != null && slotId != null) {
+            val fileName = runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && idx >= 0) cursor.getString(idx) else null
+                }
+            }.getOrNull() ?: "mapping.json"
+            viewModel.setMultiSlotFromUri(slotId, uri, fileName)
+        }
+        pendingMultiFileSlotId = null
+    }
 
     val exportSaveLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? ->
         val currentReport = report
         if (uri != null && currentReport != null) {
-            viewModel.saveExportToUri(uri, currentReport, pendingExportType, pendingExportFormat)
+            viewModel.saveExportToUri(
+                uri = uri,
+                report = currentReport,
+                type = pendingExportType,
+                format = pendingExportFormat,
+                categoryOverride = pendingExportCategory,
+                selectedOnly = pendingExportSelectedOnly
+            )
         }
     }
 
@@ -236,30 +261,34 @@ fun ToolsScreen(
             }
         }
 
-        // Tool Mode Switcher Bar
+        // Tool Mode Switcher Bar (Single-line horizontally scrollable tabs, no wrapping/truncation)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
                 .background(AmoledCard)
                 .border(1.dp, AmoledBorder, RoundedCornerShape(10.dp))
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .horizontalScroll(shortcutScrollState)
+                .padding(4.dp)
+                .testTag("tools_shortcut_bar"),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             ToolSwitcherTab(
                 title = "Compare",
                 icon = Icons.Default.CompareArrows,
                 isSelected = activeToolTab == ActiveToolTab.MAPPING_COMPARE,
-                onClick = { activeToolTab = ActiveToolTab.MAPPING_COMPARE },
-                modifier = Modifier.weight(1f),
+                onClick = {
+                    activeToolTab = ActiveToolTab.MAPPING_COMPARE
+                    coroutineScope.launch { shortcutScrollState.animateScrollTo(0) }
+                },
                 testTag = "tab_mapping_compare"
             )
             ToolSwitcherTab(
-                title = "Code➔Name",
+                title = "Code → Name",
                 icon = Icons.Default.AutoFixHigh,
                 isSelected = activeToolTab == ActiveToolTab.CODE_TO_NAME_CONVERTER,
                 onClick = { activeToolTab = ActiveToolTab.CODE_TO_NAME_CONVERTER },
-                modifier = Modifier.weight(1.1f),
                 testTag = "tab_code_to_name"
             )
             ToolSwitcherTab(
@@ -267,7 +296,6 @@ fun ToolsScreen(
                 icon = Icons.Default.Info,
                 isSelected = activeToolTab == ActiveToolTab.FLAG_INFORMATION,
                 onClick = { activeToolTab = ActiveToolTab.FLAG_INFORMATION },
-                modifier = Modifier.weight(1f),
                 testTag = "tab_flag_information"
             )
             ToolSwitcherTab(
@@ -275,7 +303,6 @@ fun ToolsScreen(
                 icon = Icons.Default.Search,
                 isSelected = activeToolTab == ActiveToolTab.FLAG_ANALYSIS,
                 onClick = { activeToolTab = ActiveToolTab.FLAG_ANALYSIS },
-                modifier = Modifier.weight(1f),
                 testTag = "tab_flag_analysis"
             )
             ToolSwitcherTab(
@@ -283,7 +310,6 @@ fun ToolsScreen(
                 icon = Icons.Default.SwapVert,
                 isSelected = activeToolTab == ActiveToolTab.IBACKUP_CONVERTER,
                 onClick = { activeToolTab = ActiveToolTab.IBACKUP_CONVERTER },
-                modifier = Modifier.weight(1f),
                 testTag = "tab_ibackup_converter"
             )
         }
@@ -322,28 +348,12 @@ fun ToolsScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "JSON Code to Name Converter",
-                            color = TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(AccentGreen)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "NEW",
-                                color = Color.Black,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    Text(
+                        text = "JSON Code to Name Converter",
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         text = "Convert numeric-code JSON backups into readable name-based JSON backups with coverage analysis",
                         color = TextSecondary,
@@ -395,28 +405,12 @@ fun ToolsScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Flag Information",
-                            color = TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(AccentGreen)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "NEW",
-                                color = Color.Black,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Flag Information",
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         text = "Paste raw flag info, separate into editable cards, copy fields individually, or copy all",
                         color = TextSecondary,
@@ -468,28 +462,12 @@ fun ToolsScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Flag Analysis",
-                            color = TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(AccentGreen)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "NEW",
-                                color = Color.Black,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Flag Analysis",
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         text = "Import iBackup/JSON, resolve numeric codes with database, toggle flags, and export",
                         color = TextSecondary,
@@ -588,7 +566,7 @@ fun ToolsScreen(
             }
         }
 
-        // Compare Setup Box
+        // Compare Setup Box (2-File Diff | Multi-File 3+ | Session Diff)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -598,351 +576,210 @@ fun ToolsScreen(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 1. Old Mapping Selector
-            MappingSourceSelectorCard(
-                title = "Old Mapping (Baseline)",
-                selectedSource = oldSource,
-                previewInfo = oldSourcePreview,
-                availableSources = availableSources,
-                onSelectSource = { viewModel.setOldCompareSource(it) },
-                onPickStorageFile = onPickOldFile,
-                onOpenPasteDialog = { pasteTargetIsOld = true },
-                testTagPrefix = "old_mapping"
+            CompareModeSelector(
+                selectedMode = compareMode,
+                onModeSelected = { viewModel.setCompareMode(it) }
             )
 
-            // Swap button
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                IconButton(
-                    onClick = { viewModel.swapCompareSources() },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(AmoledCardHover)
-                        .border(1.dp, AmoledBorder, RoundedCornerShape(18.dp))
-                        .testTag("button_swap_sources")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwapVert,
-                        contentDescription = "Swap Old and New Mapping",
-                        tint = AccentGreen,
-                        modifier = Modifier.size(20.dp)
+            when (compareMode) {
+                CompareMode.TWO_FILE -> {
+                    MappingSourceSelectorCard(
+                        title = "Old Mapping (Baseline)",
+                        selectedSource = oldSource,
+                        previewInfo = oldSourcePreview,
+                        availableSources = availableSources,
+                        onSelectSource = { viewModel.setOldCompareSource(it) },
+                        onPickStorageFile = onPickOldFile,
+                        onOpenPasteDialog = { pasteTargetIsOld = true },
+                        testTagPrefix = "old_mapping"
+                    )
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.swapCompareSources() },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(AmoledCardHover)
+                                .border(1.dp, AmoledBorder, RoundedCornerShape(18.dp))
+                                .testTag("button_swap_sources")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SwapVert,
+                                contentDescription = "Swap Old and New Mapping",
+                                tint = AccentGreen,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    MappingSourceSelectorCard(
+                        title = "New Mapping (Target)",
+                        selectedSource = newSource,
+                        previewInfo = newSourcePreview,
+                        availableSources = availableSources,
+                        onSelectSource = { viewModel.setNewCompareSource(it) },
+                        onPickStorageFile = onPickNewFile,
+                        onOpenPasteDialog = { pasteTargetIsOld = false },
+                        testTagPrefix = "new_mapping"
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Button(
+                        onClick = { viewModel.runComparison() },
+                        enabled = !isComparing && newSource != null,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentGreen,
+                            contentColor = Color.Black,
+                            disabledContainerColor = AmoledCardHover,
+                            disabledContentColor = TextTertiary
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("button_compare_files")
+                    ) {
+                        if (isComparing) {
+                            CircularProgressIndicator(
+                                color = Color.Black,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Analyzing & Comparing...",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CompareArrows,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Compare Files",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                CompareMode.MULTI_FILE -> {
+                    MultiFileCompareSetupSection(
+                        slots = multiSlots,
+                        availableSources = availableSources,
+                        isComparing = isComparing,
+                        onSelectSlotSource = { id, src -> viewModel.setMultiSlotSource(id, src) },
+                        onPickSlotFile = { id ->
+                            pendingMultiFileSlotId = id
+                            multiSlotFileLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        onPasteSlotJson = { id -> pasteMultiSlotId = id },
+                        onRemoveSlot = { id -> viewModel.removeMultiCompareSlot(id) },
+                        onAddSlot = { viewModel.addMultiCompareSlot() },
+                        onRunMultiCompare = { viewModel.runMultiFileComparison() }
                     )
                 }
-            }
 
-            // 2. New Mapping Selector
-            MappingSourceSelectorCard(
-                title = "New Mapping (Target)",
-                selectedSource = newSource,
-                previewInfo = newSourcePreview,
-                availableSources = availableSources,
-                onSelectSource = { viewModel.setNewCompareSource(it) },
-                onPickStorageFile = onPickNewFile,
-                onOpenPasteDialog = { pasteTargetIsOld = false },
-                testTagPrefix = "new_mapping"
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Prominent Compare Files Button
-            Button(
-                onClick = { viewModel.runComparison() },
-                enabled = !isComparing && newSource != null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentGreen,
-                    contentColor = Color.Black,
-                    disabledContainerColor = AmoledCardHover,
-                    disabledContentColor = TextTertiary
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("button_compare_files")
-            ) {
-                if (isComparing) {
-                    CircularProgressIndicator(
-                        color = Color.Black,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Analyzing & Comparing...",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.CompareArrows,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Compare Files",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                CompareMode.SESSION_DIFF -> {
+                    SessionDiffSetupSection(
+                        history = compareHistory,
+                        isComparing = isComparing,
+                        onCompareSessions = { recA, recB -> viewModel.compareTwoHistorySessions(recA, recB) }
                     )
                 }
             }
         }
 
-        // 3. Expanded Comparison Results, Catalog, Analytics, Health & History
+        // 15 Dedicated Comparison Results, Catalog, Intelligence & Export Hub
         if (report != null) {
             val currentReport = report!!
-
-            // Expanded Dashboard
-            ComparisonDashboard(
-                summary = currentReport.summary,
-                selectedFilter = filterTab,
-                onFilterSelected = { tab ->
-                    viewModel.setCompareSectionTab(CompareSectionTab.CHANGES)
-                    viewModel.setCompareFilterTab(tab)
+            MappingResultSectionsHub(
+                report = currentReport,
+                multiFileReport = multiFileReport,
+                sessionDiffReport = sessionDiffReport,
+                activeSection = activeResultSection,
+                onSelectSection = { viewModel.setActiveResultSection(it) },
+                searchQuery = searchQuery,
+                onSearchQueryChanged = { viewModel.onCompareSearchQueryChanged(it) },
+                onCommitSearchHistory = { viewModel.commitCompareSearchToHistory(it) },
+                onClearSearch = { viewModel.clearCompareSearch() },
+                compareSearchHistory = compareSearchHistory,
+                onClearSearchHistory = { viewModel.clearCompareSearchHistory() },
+                quickFilter = quickFilter,
+                onQuickFilterSelected = { viewModel.setCompareQuickFilter(it) },
+                catalogCategory = catalogCategory,
+                selectedCatalogCategories = selectedCatalogCategories,
+                onSelectCatalogCategory = { viewModel.setCatalogCategoryFilter(it) },
+                onOpenMultiCategoryDialog = { showMultiCategoryDialog = true },
+                catalogSort = catalogSort,
+                onSelectCatalogSort = { viewModel.setCatalogSortOption(it) },
+                catalogScope = catalogScope,
+                onSelectCatalogScope = { viewModel.setCatalogScopeFilter(it) },
+                namespaceFilter = namespaceFilter,
+                onSelectNamespaceFilter = { viewModel.setNamespaceFilter(it) },
+                exactSubflagCount = exactSubflagCount,
+                onSelectExactSubflagCount = { viewModel.setExactSubflagCountFilter(it) },
+                onlyInOneMapping = onlyInOneMapping,
+                onToggleOnlyInOneMapping = { viewModel.setOnlyInOneMappingFilter(it) },
+                favoritesOnly = favoritesOnly,
+                onToggleFavoritesOnly = { viewModel.setFavoritesOnlyFilter(it) },
+                favoriteFlagNames = favoriteFlagNames,
+                onToggleFavoriteFlag = { viewModel.toggleFavoriteFlag(it) },
+                catalogDisplayMode = catalogDisplayMode,
+                onSelectCatalogDisplayMode = { viewModel.setCatalogDisplayMode(it) },
+                expandAllCategories = expandAllCategories,
+                onToggleExpandAllCategories = { viewModel.toggleExpandAllCatalogCategories() },
+                selectedResultKeys = selectedResultKeys,
+                onToggleResultSelection = { viewModel.toggleResultSelection(it) },
+                onClearResultSelection = { viewModel.clearResultSelection() },
+                onBulkCopySelected = { viewModel.bulkCopySelected(currentReport) },
+                onOpenExportDialog = { type, cat ->
+                    pendingExportType = type
+                    pendingExportCategory = cat
+                    pendingExportSelectedOnly = false
+                    showExportDialog = true
                 },
-                onQuickFilterSelected = { qf ->
-                    viewModel.setCompareSectionTab(CompareSectionTab.CATALOG)
-                    viewModel.setCompareQuickFilter(qf)
-                },
-                onOpenHealthTab = {
-                    viewModel.setCompareSectionTab(CompareSectionTab.HEALTH)
-                },
-                modifier = Modifier.testTag("comparison_dashboard")
-            )
-
-            // Workspace Section Tabs (Changes | Catalog | Analytics | Health | History)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SectionWorkspaceChip(
-                    label = "Changes",
-                    icon = Icons.Default.CompareArrows,
-                    selected = sectionTab == CompareSectionTab.CHANGES,
-                    onClick = { viewModel.setCompareSectionTab(CompareSectionTab.CHANGES) },
-                    testTag = "section_tab_changes"
-                )
-                SectionWorkspaceChip(
-                    label = "Catalog (${currentReport.catalogFlags.size})",
-                    icon = Icons.Default.ViewList,
-                    selected = sectionTab == CompareSectionTab.CATALOG,
-                    onClick = { viewModel.setCompareSectionTab(CompareSectionTab.CATALOG) },
-                    testTag = "section_tab_catalog"
-                )
-                SectionWorkspaceChip(
-                    label = "Analytics",
-                    icon = Icons.Default.Analytics,
-                    selected = sectionTab == CompareSectionTab.ANALYTICS,
-                    onClick = { viewModel.setCompareSectionTab(CompareSectionTab.ANALYTICS) },
-                    testTag = "section_tab_analytics"
-                )
-                SectionWorkspaceChip(
-                    label = "Health",
-                    icon = Icons.Default.HealthAndSafety,
-                    selected = sectionTab == CompareSectionTab.HEALTH,
-                    onClick = { viewModel.setCompareSectionTab(CompareSectionTab.HEALTH) },
-                    testTag = "section_tab_health"
-                )
-                SectionWorkspaceChip(
-                    label = "History (${compareHistory.size})",
-                    icon = Icons.Default.History,
-                    selected = sectionTab == CompareSectionTab.HISTORY,
-                    onClick = { viewModel.setCompareSectionTab(CompareSectionTab.HISTORY) },
-                    testTag = "section_tab_history"
-                )
-            }
-
-            // Global Search & Action Toolbar (for Changes & Catalog)
-            if (sectionTab == CompareSectionTab.CHANGES || sectionTab == CompareSectionTab.CATALOG) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { viewModel.onCompareSearchQueryChanged(it) },
-                        placeholder = {
-                            Text(
-                                text = "Search flag, code, subflag, or category...",
-                                color = TextTertiary,
-                                fontSize = 13.sp
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = TextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.clearCompareSearch() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Clear,
-                                        contentDescription = "Clear search",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = AmoledCard,
-                            unfocusedContainerColor = AmoledCard,
-                            focusedBorderColor = AccentGreen,
-                            unfocusedBorderColor = AmoledBorder,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("compare_search_input")
-                    )
-
-                    // Quick Filter Chips Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        CompareQuickFilter.entries.forEach { qf ->
-                            val chipAccent = when (qf) {
-                                CompareQuickFilter.NEW -> AccentGreen
-                                CompareQuickFilter.REMOVED -> DangerRed
-                                CompareQuickFilter.UPDATED -> UpdatedOrange
-                                CompareQuickFilter.UNCHANGED -> TextSecondary
-                                CompareQuickFilter.DUPLICATE -> WarningYellow
-                                CompareQuickFilter.INVALID -> DangerRed
-                                else -> AccentGreen
-                            }
-                            CompareFilterChip(
-                                label = qf.label,
-                                isSelected = quickFilter == qf,
-                                accentColor = chipAccent,
-                                onClick = {
-                                    if (qf == CompareQuickFilter.INVALID) {
-                                        viewModel.setCompareSectionTab(CompareSectionTab.HEALTH)
-                                    } else {
-                                        viewModel.setCompareQuickFilter(qf)
-                                    }
-                                },
-                                testTag = "quick_filter_${qf.name.lowercase()}"
-                            )
-                        }
+                onDirectSaveReport = { type, fmt, cat, selOnly ->
+                    pendingExportType = type
+                    pendingExportFormat = fmt
+                    pendingExportCategory = cat
+                    pendingExportSelectedOnly = selOnly
+                    val name = when {
+                        selOnly -> "Selected_Flags_${selectedResultKeys.size}.${fmt.extension}"
+                        cat != null -> "Category_${cat.replace(" ", "_")}.${fmt.extension}"
+                        else -> "${type.defaultFileName}.${fmt.extension}"
                     }
-                }
-            }
-
-            // Action Buttons: Export Report & Share
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { showExportDialog = true },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(1.dp, AmoledBorder, RoundedCornerShape(8.dp))
-                        .testTag("button_export_report")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Description,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Export / Save As", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-
-                OutlinedButton(
-                    onClick = { viewModel.shareComparisonReport(currentReport) },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(1.dp, AmoledBorder, RoundedCornerShape(8.dp))
-                        .testTag("button_share_report")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share Report", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            // Active Section Content
-            when (sectionTab) {
-                CompareSectionTab.CHANGES -> {
-                    ComparisonResultsList(
-                        report = currentReport,
-                        filterTab = filterTab,
-                        quickFilter = quickFilter,
-                        searchQuery = searchQuery,
-                        onCopy = { text, label -> viewModel.copyText(text, label) },
-                        onShare = { text, title -> viewModel.shareText(text, title) },
-                        onInspectFlag = { flagName -> viewModel.openFlagDetailByName(flagName) }
-                    )
-                }
-
-                CompareSectionTab.CATALOG -> {
-                    MappingCatalogSection(
-                        report = currentReport,
-                        searchQuery = searchQuery,
-                        quickFilter = quickFilter,
-                        selectedCategory = catalogCategory,
-                        sortOption = catalogSort,
-                        scopeFilter = catalogScope,
-                        onCategorySelected = { viewModel.setCatalogCategoryFilter(it) },
-                        onSortSelected = { viewModel.setCatalogSortOption(it) },
-                        onScopeSelected = { viewModel.setCatalogScopeFilter(it) },
-                        onOpenDetail = { viewModel.openFlagDetail(it) },
-                        onCopy = { text, label -> viewModel.copyText(text, label) }
-                    )
-                }
-
-                CompareSectionTab.ANALYTICS -> {
-                    MappingAnalyticsSection(
-                        report = currentReport,
-                        onSelectCategoryInCatalog = { cat ->
-                            viewModel.setCatalogCategoryFilter(cat)
-                            viewModel.setCompareSectionTab(CompareSectionTab.CATALOG)
-                        },
-                        onOpenFlagDetail = { viewModel.openFlagDetail(it) }
-                    )
-                }
-
-                CompareSectionTab.HEALTH -> {
-                    MappingHealthDiagnosticsSection(
-                        report = currentReport,
-                        onInspectFlagByName = { viewModel.openFlagDetailByName(it) },
-                        onCopy = { text, label -> viewModel.copyText(text, label) }
-                    )
-                }
-
-                CompareSectionTab.HISTORY -> {
-                    MappingHistorySection(
-                        history = compareHistory,
-                        onLoadRecord = { viewModel.loadHistorySession(it) },
-                        onDeleteRecord = { viewModel.deleteHistorySession(it) },
-                        onClearAll = { viewModel.clearAllCompareHistory() }
-                    )
-                }
-            }
+                    exportSaveLauncher.launch(name)
+                },
+                onDirectCopyReport = { type, fmt, cat ->
+                    val content = viewModel.buildExportContentForReport(currentReport, type, fmt, cat)
+                    viewModel.copyText(content, type.title)
+                },
+                onDirectShareReport = { type, fmt, cat ->
+                    val content = viewModel.buildExportContentForReport(currentReport, type, fmt, cat)
+                    viewModel.shareText(content, type.title)
+                },
+                onCopyAllInCategory = { cat -> viewModel.copyAllFlagsInCategory(currentReport, cat) },
+                onOpenFlagDetail = { viewModel.openFlagDetail(it) },
+                onOpenFlagDetailByName = { viewModel.openFlagDetailByName(it) },
+                onCopy = { text, label -> viewModel.copyText(text, label) },
+                onShare = { text, title -> viewModel.shareText(text, title) },
+                onRefreshReindex = { viewModel.refreshAndReindexComparison() },
+                searchIndex = searchIndex,
+                compareHistory = compareHistory,
+                onLoadHistoryRecord = { viewModel.loadHistorySession(it) },
+                onDeleteHistoryRecord = { viewModel.deleteHistorySession(it) },
+                onClearAllHistory = { viewModel.clearAllCompareHistory() }
+            )
         } else if (compareHistory.isNotEmpty()) {
             MappingHistorySection(
                 history = compareHistory,
@@ -962,7 +799,6 @@ fun ToolsScreen(
             modifier = Modifier.padding(top = 8.dp)
         )
 
-        // Utility: Mapping Source Selector
         UtilityItem(
             title = "Manage Mapping Source",
             subtitle = "Switch between built-in Askxtylishh.json and imported custom JSON",
@@ -978,7 +814,6 @@ fun ToolsScreen(
             testTag = "tool_manage_mapping"
         )
 
-        // Utility: Explore Flags
         UtilityItem(
             title = "Explore MetaConfig Flags",
             subtitle = "Access the comprehensive 66-category flag hierarchy",
@@ -994,7 +829,6 @@ fun ToolsScreen(
             testTag = "tool_explore_flags"
         )
 
-        // Utility: Settings
         UtilityItem(
             title = "MetaTools Settings",
             subtitle = "Configure search preferences and file management",
@@ -1015,24 +849,51 @@ fun ToolsScreen(
     if (showExportDialog && report != null) {
         val currentReport = report!!
         MappingExportDialog(
+            initialType = pendingExportType,
+            initialCategory = pendingExportCategory ?: catalogCategory,
+            selectedEntriesCount = selectedResultKeys.size,
             onDismiss = { showExportDialog = false },
-            onSaveViaSaf = { type, format, suggestedFileName ->
+            onSaveViaSaf = { type, format, suggestedFileName, categoryName, selectedOnly ->
                 pendingExportType = type
                 pendingExportFormat = format
+                pendingExportCategory = categoryName
+                pendingExportSelectedOnly = selectedOnly
                 exportSaveLauncher.launch(suggestedFileName)
             },
-            onCopyReport = { type, format ->
-                val content = MappingCompareEngine.generateExportContent(currentReport, type, format)
+            onCopyReport = { type, format, categoryName, selectedOnly ->
+                val content = viewModel.buildExportContentForReport(
+                    report = currentReport,
+                    type = type,
+                    format = format,
+                    categoryOverride = categoryName,
+                    selectedOnly = selectedOnly
+                )
                 viewModel.copyText(content, type.title)
             },
-            onShareReport = { type, format ->
-                val content = MappingCompareEngine.generateExportContent(currentReport, type, format)
+            onShareReport = { type, format, categoryName, selectedOnly ->
+                val content = viewModel.buildExportContentForReport(
+                    report = currentReport,
+                    type = type,
+                    format = format,
+                    categoryOverride = categoryName,
+                    selectedOnly = selectedOnly
+                )
                 viewModel.shareText(content, type.title)
             }
         )
     }
 
-    // Paste JSON Dialog
+    // Multi-Category Filter Dialog
+    if (showMultiCategoryDialog) {
+        MultiCategoryFilterDialog(
+            selectedCategories = selectedCatalogCategories,
+            onToggleCategory = { viewModel.toggleCatalogCategorySelection(it) },
+            onClearAll = { viewModel.clearCatalogCategoryFilters() },
+            onDismiss = { showMultiCategoryDialog = false }
+        )
+    }
+
+    // Paste JSON Dialog (Old / New / Multi Slot)
     if (pasteTargetIsOld != null) {
         val isOld = pasteTargetIsOld!!
         PasteMappingJsonDialog(
@@ -1047,346 +908,29 @@ fun ToolsScreen(
                 pasteTargetIsOld = null
             }
         )
+    } else if (pasteMultiSlotId != null) {
+        val targetSlotId = pasteMultiSlotId!!
+        PasteMappingJsonDialog(
+            targetLabel = "Mapping Slot",
+            onDismiss = { pasteMultiSlotId = null },
+            onApplyPastedJson = { rawJson, name ->
+                viewModel.setMultiSlotFromPaste(targetSlotId, rawJson, name)
+                pasteMultiSlotId = null
+            }
+        )
     }
 
     // Flag Detail Inspector Dialog
     if (selectedFlagDetail != null) {
+        val flagDetail = selectedFlagDetail!!
         FlagDetailInspectorDialog(
-            flag = selectedFlagDetail!!,
+            flag = flagDetail,
+            isFavorite = favoriteFlagNames.contains(flagDetail.name),
+            onToggleFavorite = { viewModel.toggleFavoriteFlag(flagDetail.name) },
+            onShare = { text, title -> viewModel.shareText(text, title) },
             onDismiss = { viewModel.closeFlagDetail() },
             onCopy = { text, label -> viewModel.copyText(text, label) }
         )
-    }
-}
-
-@Composable
-private fun SectionWorkspaceChip(
-    label: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-    testTag: String
-) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) AccentGreenContainer else AmoledCard)
-            .border(1.dp, if (selected) AccentGreen else AmoledBorder, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 7.dp)
-            .testTag(testTag),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (selected) AccentGreen else TextSecondary,
-            modifier = Modifier.size(15.dp)
-        )
-        Text(
-            text = label,
-            color = if (selected) AccentGreen else TextSecondary,
-            fontSize = 11.5.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun CompareFilterChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    testTag: String,
-    accentColor: Color = AccentGreen
-) {
-    val borderColor = if (isSelected) accentColor else AmoledBorder
-    val bgColor = if (isSelected) accentColor.copy(alpha = 0.15f) else AmoledCard
-    val textColor = if (isSelected) accentColor else TextSecondary
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp)
-            .testTag(testTag)
-    ) {
-        Text(
-            text = label,
-            color = textColor,
-            fontSize = 12.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-        )
-    }
-}
-
-@Composable
-private fun ComparisonResultsList(
-    report: ComparisonReport,
-    filterTab: CompareFilterTab,
-    quickFilter: CompareQuickFilter,
-    searchQuery: String,
-    onCopy: (String, String) -> Unit,
-    onShare: (String, String) -> Unit,
-    onInspectFlag: (String) -> Unit
-) {
-    var visibleLimit by remember(filterTab, quickFilter, searchQuery) { mutableIntStateOf(60) }
-
-    val dupOrUnknownSet = remember(report.catalogFlags, quickFilter) {
-        when (quickFilter) {
-            CompareQuickFilter.DUPLICATE -> report.catalogFlags.filter { it.isDuplicateInOld || it.isDuplicateInNew }.map { it.name }.toSet()
-            CompareQuickFilter.UNKNOWN_CATEGORY -> report.catalogFlags.filter { it.isUnknownCategory }.map { it.name }.toSet()
-            else -> null
-        }
-    }
-
-    fun passesQuickSubCheck(parentFlagName: String, hasSubs: Boolean, category: String): Boolean {
-        return when (quickFilter) {
-            CompareQuickFilter.HAS_SUBFLAGS -> hasSubs
-            CompareQuickFilter.NO_SUBFLAGS -> !hasSubs
-            CompareQuickFilter.DUPLICATE -> dupOrUnknownSet?.contains(parentFlagName) == true
-            CompareQuickFilter.UNKNOWN_CATEGORY -> category == "Other"
-            else -> true
-        }
-    }
-
-    val filteredNewFlags = remember(report.newFlags, searchQuery, filterTab, quickFilter) {
-        if (filterTab == CompareFilterTab.REMOVED || filterTab == CompareFilterTab.UPDATED || filterTab == CompareFilterTab.UNCHANGED) {
-            emptyList()
-        } else {
-            report.newFlags.filter {
-                passesQuickSubCheck(it.flag.name, it.flag.subFlags.isNotEmpty(), it.flag.category) &&
-                    (MappingCompareEngine.matchesQuery(searchQuery, it.flag.name, it.flag.code, it.flag.category) ||
-                        it.flag.subFlags.any { s -> MappingCompareEngine.matchesQuery(searchQuery, s.name, s.code) })
-            }
-        }
-    }
-
-    val filteredNewSubFlags = remember(report.newSubFlags, searchQuery, filterTab, quickFilter) {
-        if (filterTab == CompareFilterTab.REMOVED || filterTab == CompareFilterTab.UPDATED || filterTab == CompareFilterTab.UNCHANGED) {
-            emptyList()
-        } else {
-            report.newSubFlags.filter {
-                passesQuickSubCheck(it.parentFlagName, true, it.category) &&
-                    MappingCompareEngine.matchesQuery(
-                        searchQuery,
-                        it.subFlag.name,
-                        it.subFlag.code,
-                        it.parentFlagName,
-                        it.parentFlagCode,
-                        it.category
-                    )
-            }
-        }
-    }
-
-    val filteredRemovedFlags = remember(report.removedFlags, searchQuery, filterTab, quickFilter) {
-        if (filterTab == CompareFilterTab.NEW || filterTab == CompareFilterTab.UPDATED || filterTab == CompareFilterTab.UNCHANGED) {
-            emptyList()
-        } else {
-            report.removedFlags.filter {
-                passesQuickSubCheck(it.flag.name, it.flag.subFlags.isNotEmpty(), it.flag.category) &&
-                    (MappingCompareEngine.matchesQuery(searchQuery, it.flag.name, it.flag.code, it.flag.category) ||
-                        it.flag.subFlags.any { s -> MappingCompareEngine.matchesQuery(searchQuery, s.name, s.code) })
-            }
-        }
-    }
-
-    val filteredRemovedSubFlags = remember(report.removedSubFlags, searchQuery, filterTab, quickFilter) {
-        if (filterTab == CompareFilterTab.NEW || filterTab == CompareFilterTab.UPDATED || filterTab == CompareFilterTab.UNCHANGED) {
-            emptyList()
-        } else {
-            report.removedSubFlags.filter {
-                passesQuickSubCheck(it.parentFlagName, true, it.category) &&
-                    MappingCompareEngine.matchesQuery(
-                        searchQuery,
-                        it.subFlag.name,
-                        it.subFlag.code,
-                        it.parentFlagName,
-                        it.parentFlagCode,
-                        it.category
-                    )
-            }
-        }
-    }
-
-    val filteredUpdatedCodes = remember(report.updatedFlagCodes, searchQuery, filterTab, quickFilter) {
-        if (filterTab == CompareFilterTab.NEW || filterTab == CompareFilterTab.REMOVED || filterTab == CompareFilterTab.UNCHANGED) {
-            emptyList()
-        } else {
-            report.updatedFlagCodes.filter {
-                passesQuickSubCheck(it.flagName, true, it.category) &&
-                    MappingCompareEngine.matchesQuery(searchQuery, it.flagName, it.oldCode, it.newCode, it.category)
-            }
-        }
-    }
-
-    val filteredUpdatedSubFlags = remember(report.updatedSubFlags, searchQuery, filterTab, quickFilter) {
-        if (filterTab == CompareFilterTab.NEW || filterTab == CompareFilterTab.REMOVED || filterTab == CompareFilterTab.UNCHANGED) {
-            emptyList()
-        } else {
-            report.updatedSubFlags.filter {
-                passesQuickSubCheck(it.parentFlagName, true, it.category) &&
-                    MappingCompareEngine.matchesQuery(
-                        searchQuery,
-                        it.subFlagName,
-                        it.parentFlagName,
-                        it.oldCode,
-                        it.newCode,
-                        it.category
-                    )
-            }
-        }
-    }
-
-    val filteredUnchangedFlags = remember(report.unchangedFlags, searchQuery, filterTab, quickFilter) {
-        val includeUnchanged = filterTab == CompareFilterTab.UNCHANGED ||
-            (filterTab == CompareFilterTab.ALL &&
-                (searchQuery.isNotBlank() ||
-                    quickFilter == CompareQuickFilter.HAS_SUBFLAGS ||
-                    quickFilter == CompareQuickFilter.NO_SUBFLAGS ||
-                    quickFilter == CompareQuickFilter.DUPLICATE ||
-                    quickFilter == CompareQuickFilter.UNKNOWN_CATEGORY))
-        if (!includeUnchanged) {
-            emptyList()
-        } else {
-            report.unchangedFlags.filter {
-                passesQuickSubCheck(it.flag.name, it.flag.subFlags.isNotEmpty(), it.flag.category) &&
-                    (MappingCompareEngine.matchesQuery(searchQuery, it.flag.name, it.flag.code, it.flag.category) ||
-                        it.flag.subFlags.any { s -> MappingCompareEngine.matchesQuery(searchQuery, s.name, s.code) })
-            }
-        }
-    }
-
-    val totalVisible = filteredNewFlags.size + filteredNewSubFlags.size +
-        filteredRemovedFlags.size + filteredRemovedSubFlags.size +
-        filteredUpdatedCodes.size + filteredUpdatedSubFlags.size +
-        filteredUnchangedFlags.size
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (totalVisible == 0) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (searchQuery.isNotEmpty()) "No changes match \"$searchQuery\"" else "No entries in this filter",
-                    color = TextTertiary,
-                    fontSize = 13.sp
-                )
-            }
-        } else {
-            Text(
-                text = "Showing ${minOf(visibleLimit, totalVisible)} of $totalVisible items (Tap any card for Flag Detail)",
-                color = TextTertiary,
-                fontSize = 11.sp
-            )
-
-            var remainingBudget = visibleLimit
-
-            val sliceNewFlags = filteredNewFlags.take(remainingBudget).also { remainingBudget -= it.size }
-            val sliceNewSubs = filteredNewSubFlags.take(remainingBudget).also { remainingBudget -= it.size }
-            val sliceUpdCodes = filteredUpdatedCodes.take(remainingBudget).also { remainingBudget -= it.size }
-            val sliceUpdSubs = filteredUpdatedSubFlags.take(remainingBudget).also { remainingBudget -= it.size }
-            val sliceRemFlags = filteredRemovedFlags.take(remainingBudget).also { remainingBudget -= it.size }
-            val sliceRemSubs = filteredRemovedSubFlags.take(remainingBudget).also { remainingBudget -= it.size }
-            val sliceUnchanged = filteredUnchangedFlags.take(remainingBudget)
-
-            sliceNewFlags.forEach { item ->
-                NewUniversalFlagCard(
-                    item = item,
-                    onCopyName = { onCopy(item.flag.name, "Universal Flag Name") },
-                    onCopyCode = { onCopy(item.flag.code, "Universal Flag Code") },
-                    onShare = { onShare("${item.flag.name} (${item.flag.code})", "Share New Flag") },
-                    onInspect = { onInspectFlag(item.flag.name) }
-                )
-            }
-
-            sliceNewSubs.forEach { item ->
-                NewSubFlagCard(
-                    item = item,
-                    onCopySubFlagName = { onCopy(item.subFlag.name, "Sub-Flag Name") },
-                    onCopySubFlagCode = { onCopy(item.subFlag.code, "Sub-Flag Code") },
-                    onShare = { onShare("${item.parentFlagName} -> ${item.subFlag.name} (${item.subFlag.code})", "Share New Sub-Flag") },
-                    onInspect = { onInspectFlag(item.parentFlagName) }
-                )
-            }
-
-            sliceUpdCodes.forEach { item ->
-                UpdatedUniversalFlagCodeCard(
-                    item = item,
-                    onCopyFlagName = { onCopy(item.flagName, "Universal Flag Name") },
-                    onCopyOldCode = { onCopy(item.oldCode, "Old Code") },
-                    onCopyNewCode = { onCopy(item.newCode, "New Code") },
-                    onShare = { onShare("${item.flagName}: Code changed from ${item.oldCode} to ${item.newCode}", "Share Updated Flag Code") },
-                    onInspect = { onInspectFlag(item.flagName) }
-                )
-            }
-
-            sliceUpdSubs.forEach { item ->
-                UpdatedSubFlagCard(
-                    item = item,
-                    onCopySubFlagName = { onCopy(item.subFlagName, "Sub-Flag Name") },
-                    onCopyOldCode = { onCopy(item.oldCode, "Old Code") },
-                    onCopyNewCode = { onCopy(item.newCode, "New Code") },
-                    onShare = { onShare("${item.parentFlagName} -> ${item.subFlagName}: Code changed from ${item.oldCode} to ${item.newCode}", "Share Updated Sub-Flag") },
-                    onInspect = { onInspectFlag(item.parentFlagName) }
-                )
-            }
-
-            sliceRemFlags.forEach { item ->
-                RemovedUniversalFlagCard(
-                    item = item,
-                    onCopyName = { onCopy(item.flag.name, "Removed Flag Name") },
-                    onCopyCode = { onCopy(item.flag.code, "Removed Flag Code") },
-                    onShare = { onShare("${item.flag.name} (${item.flag.code})", "Share Removed Flag") },
-                    onInspect = { onInspectFlag(item.flag.name) }
-                )
-            }
-
-            sliceRemSubs.forEach { item ->
-                RemovedSubFlagCard(
-                    item = item,
-                    onCopySubFlagName = { onCopy(item.subFlag.name, "Removed Sub-Flag Name") },
-                    onCopySubFlagCode = { onCopy(item.subFlag.code, "Removed Sub-Flag Code") },
-                    onShare = { onShare("${item.parentFlagName} -> ${item.subFlag.name} (${item.subFlag.code})", "Share Removed Sub-Flag") },
-                    onInspect = { onInspectFlag(item.parentFlagName) }
-                )
-            }
-
-            sliceUnchanged.forEach { item ->
-                UnchangedUniversalFlagCard(
-                    item = item,
-                    onCopyName = { onCopy(item.flag.name, "Universal Flag Name") },
-                    onCopyCode = { onCopy(item.flag.code, "Universal Flag Code") },
-                    onInspect = { onInspectFlag(item.flag.name) }
-                )
-            }
-
-            if (totalVisible > visibleLimit) {
-                OutlinedButton(
-                    onClick = { visibleLimit += 100 },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, AmoledBorder, RoundedCornerShape(8.dp))
-                ) {
-                    Text(
-                        text = "Load More (+${minOf(100, totalVisible - visibleLimit)} of ${totalVisible - visibleLimit} remaining)",
-                        color = AccentGreen,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -1454,23 +998,29 @@ private fun UtilityItem(
 @Composable
 private fun ToolSwitcherTab(
     title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     testTag: String = ""
 ) {
+    val bgColor by animateColorAsState(
+        targetValue = if (isSelected) AccentGreenContainer else Color.Transparent,
+        label = "shortcutBg"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) AccentGreen.copy(alpha = 0.6f) else Color.Transparent,
+        label = "shortcutBorder"
+    )
+
     Row(
         modifier = modifier
+            .height(38.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) AccentGreenContainer else Color.Transparent)
-            .border(
-                1.dp,
-                if (isSelected) AccentGreen.copy(alpha = 0.5f) else Color.Transparent,
-                RoundedCornerShape(8.dp)
-            )
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 10.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
             .testTag(testTag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
@@ -1485,8 +1035,10 @@ private fun ToolSwitcherTab(
         Text(
             text = title,
             color = if (isSelected) TextPrimary else TextSecondary,
-            fontSize = 12.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+            fontSize = 12.5.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

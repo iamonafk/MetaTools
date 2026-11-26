@@ -14,6 +14,7 @@ import com.example.model.FlagChangeStatus
 import com.example.model.MappingParseDiagnostics
 import com.example.model.NewFlagItem
 import com.example.model.NewSubFlagItem
+import com.example.model.ParentChildChangeItem
 import com.example.model.PotentialRenameCandidate
 import com.example.model.RemovedFlagItem
 import com.example.model.RemovedSubFlagItem
@@ -123,7 +124,9 @@ object MappingCompareEngine {
                         newSubFlagCount = newFlag.subFlags.size,
                         isDuplicateInOld = false,
                         isDuplicateInNew = duplicateNewNames.contains(newFlag.name),
-                        isUnknownCategory = newFlag.category == "Other"
+                        isUnknownCategory = newFlag.category == "Other",
+                        oldOriginalEntry = null,
+                        newOriginalEntry = newFlag.originalEntry
                     )
                 )
             } else {
@@ -269,7 +272,9 @@ object MappingCompareEngine {
                         newSubFlagCount = newSubMap.size,
                         isDuplicateInOld = duplicateOldNames.contains(oldFlag.name),
                         isDuplicateInNew = duplicateNewNames.contains(newFlag.name),
-                        isUnknownCategory = newFlag.category == "Other"
+                        isUnknownCategory = newFlag.category == "Other",
+                        oldOriginalEntry = oldFlag.originalEntry,
+                        newOriginalEntry = newFlag.originalEntry
                     )
                 )
             }
@@ -299,7 +304,9 @@ object MappingCompareEngine {
                         newSubFlagCount = 0,
                         isDuplicateInOld = duplicateOldNames.contains(oldFlag.name),
                         isDuplicateInNew = false,
-                        isUnknownCategory = oldFlag.category == "Other"
+                        isUnknownCategory = oldFlag.category == "Other",
+                        oldOriginalEntry = oldFlag.originalEntry,
+                        newOriginalEntry = null
                     )
                 )
             }
@@ -328,6 +335,17 @@ object MappingCompareEngine {
         // 4. Category Analytics across the 66 MetaTools categories (without double-counting duplicates)
         val categoryAnalytics = buildCategoryAnalytics(catalogFlags)
 
+        // 4b. Parent-Child relationship shifts, Namespace & P92 stats, and Duplicate Cleanup Suggestions
+        val parentChildChanges = MappingIntelligenceAnalyzer.detectParentChildChanges(
+            removedSubFlags = removedSubFlags,
+            newSubFlags = newSubFlags
+        )
+        val namespaceStats = MappingIntelligenceAnalyzer.buildNamespaceStats(oldMap, newMap)
+        val cleanupSuggestions = MappingIntelligenceAnalyzer.buildCleanupSuggestions(oldDiagnostics, newDiagnostics)
+        val threadsP92FlagsCount = catalogFlags.count {
+            MappingIntelligenceAnalyzer.isThreadsOrP92(it.name, it.category)
+        }
+
         // 5. Combine diagnostics counts
         val oldUnknownCount = oldDiagnostics?.unknownCategoryCount
             ?: oldMap.values.count { it.category == "Other" }
@@ -341,6 +359,8 @@ object MappingCompareEngine {
             duplicateOldNames.size + duplicateNewNames.size
         }
         val invalidEntriesCount = (oldDiagnostics?.invalidCount ?: 0) + (newDiagnostics?.invalidCount ?: 0)
+        val emptySubflagEntriesCount = (oldDiagnostics?.emptySubFlagEntries?.size ?: 0) +
+            (newDiagnostics?.emptySubFlagEntries?.size ?: 0)
 
         val totalNew = newUniversalFlags.size + newSubFlags.size
         val totalRemoved = removedUniversalFlags.size + removedSubFlags.size
@@ -370,7 +390,12 @@ object MappingCompareEngine {
             oldByteSize = oldDiagnostics?.byteSize ?: 0L,
             newByteSize = newDiagnostics?.byteSize ?: 0L,
             oldHealthScore = oldDiagnostics?.healthScore ?: 100,
-            newHealthScore = newDiagnostics?.healthScore ?: 100
+            newHealthScore = newDiagnostics?.healthScore ?: 100,
+            mappingGrowthPercent = MappingIntelligenceAnalyzer.calcGrowthPercent(oldMap.size, newMap.size),
+            subflagGrowthPercent = MappingIntelligenceAnalyzer.calcGrowthPercent(oldSubFlagsTotal, newSubFlagsTotal),
+            parentChildChangesCount = parentChildChanges.size,
+            emptySubflagEntriesCount = emptySubflagEntriesCount,
+            threadsP92FlagsCount = threadsP92FlagsCount
         )
 
         return ComparisonReport(
@@ -386,7 +411,10 @@ object MappingCompareEngine {
             catalogFlags = catalogFlags,
             categoryAnalytics = categoryAnalytics,
             oldDiagnostics = oldDiagnostics,
-            newDiagnostics = newDiagnostics
+            newDiagnostics = newDiagnostics,
+            parentChildChanges = parentChildChanges,
+            namespaceStats = namespaceStats,
+            cleanupSuggestions = cleanupSuggestions
         )
     }
 
@@ -411,6 +439,8 @@ object MappingCompareEngine {
             val updated = items.count { it.status == FlagChangeStatus.UPDATED }
             val unchanged = items.count { it.status == FlagChangeStatus.UNCHANGED }
             val subCount = items.sumOf { it.totalDistinctSubFlags }
+            val oldSubCount = items.sumOf { it.oldSubFlagCount }
+            val newSubCount = items.sumOf { it.newSubFlagCount }
             val total = items.size
             val unchangedPct = if (total > 0) ((unchanged * 100f) / total).toInt() else 100
 
@@ -424,7 +454,11 @@ object MappingCompareEngine {
                 updatedFlagsCount = updated,
                 unchangedFlagsCount = unchanged,
                 totalSubFlags = subCount,
-                unchangedPercent = unchangedPct
+                unchangedPercent = unchangedPct,
+                oldSubFlagsCount = oldSubCount,
+                newSubFlagsCount = newSubCount,
+                flagGrowthPercent = MappingIntelligenceAnalyzer.calcGrowthPercent(oldCount, newCount),
+                subflagGrowthPercent = MappingIntelligenceAnalyzer.calcGrowthPercent(oldSubCount, newSubCount)
             )
         }
     }
@@ -508,10 +542,25 @@ object MappingCompareEngine {
                     appendLine()
                 }
             }
+            ExportReportType.SINGLE_CATEGORY_EXPORT -> MappingIntelligenceAnalyzer.generateSingleCategoryExport(
+                report = report,
+                categoryName = "See All Flags",
+                format = ExportFileFormat.TXT
+            )
+            ExportReportType.MAPPING_HEALTH_REPORT -> MappingIntelligenceAnalyzer.generateHealthReportExport(
+                report = report,
+                format = ExportFileFormat.TXT
+            )
+            ExportReportType.MULTI_FILE_MATRIX_REPORT -> formatAsText(report)
             ExportReportType.UNMAPPED_INVALID -> buildString {
-                appendHeader(this, report, "Unmapped & Invalid Entries")
+                appendHeader(this, report, "Duplicates & Invalid Entries")
                 appendDiagnosticsSection(this, "OLD MAPPING DIAGNOSTICS", report.oldDiagnostics)
                 appendDiagnosticsSection(this, "NEW MAPPING DIAGNOSTICS", report.newDiagnostics)
+                appendLine("--- DUPLICATE CLEANUP SUGGESTIONS (${report.cleanupSuggestions.size}) ---")
+                report.cleanupSuggestions.forEach {
+                    appendLine("  [${it.sourceSide}] ${it.flagName} (${it.flagCode}): ${it.recommendation}")
+                }
+                appendLine()
                 appendLine("--- POTENTIAL RENAME CANDIDATES (${report.potentialRenames.size}) ---")
                 if (report.potentialRenames.isEmpty()) {
                     appendLine("  None")
@@ -574,16 +623,39 @@ object MappingCompareEngine {
                         put("updatedFlagsCount", cat.updatedFlagsCount)
                         put("totalSubFlags", cat.totalSubFlags)
                         put("unchangedPercent", cat.unchangedPercent)
+                        put("flagGrowthPercent", cat.flagGrowthPercent.toDouble())
+                        put("subflagGrowthPercent", cat.subflagGrowthPercent.toDouble())
                         put("flags", arr)
                     })
                 }
                 put("categories", categoriesObj)
             }.toString(2)
+            ExportReportType.SINGLE_CATEGORY_EXPORT -> MappingIntelligenceAnalyzer.generateSingleCategoryExport(
+                report = report,
+                categoryName = "See All Flags",
+                format = ExportFileFormat.JSON
+            )
+            ExportReportType.MAPPING_HEALTH_REPORT -> MappingIntelligenceAnalyzer.generateHealthReportExport(
+                report = report,
+                format = ExportFileFormat.JSON
+            )
+            ExportReportType.MULTI_FILE_MATRIX_REPORT -> formatAsJson(report)
             ExportReportType.UNMAPPED_INVALID -> JSONObject().apply {
                 put("reportType", type.title)
                 put("summary", buildSummaryJson(report))
                 put("oldDiagnostics", diagnosticsToJson(report.oldDiagnostics))
                 put("newDiagnostics", diagnosticsToJson(report.newDiagnostics))
+                put("cleanupSuggestions", JSONArray().apply {
+                    report.cleanupSuggestions.forEach { sug ->
+                        put(JSONObject().apply {
+                            put("sourceSide", sug.sourceSide)
+                            put("flagName", sug.flagName)
+                            put("flagCode", sug.flagCode)
+                            put("suggestionType", sug.suggestionType)
+                            put("recommendation", sug.recommendation)
+                        })
+                    }
+                })
                 put("potentialRenames", JSONArray().apply {
                     report.potentialRenames.forEach { cand ->
                         put(JSONObject().apply {
@@ -984,6 +1056,8 @@ object MappingCompareEngine {
                     })
                 }
                 put("sf", sArr)
+                if (cat.oldOriginalEntry != null) put("oe", cat.oldOriginalEntry)
+                if (cat.newOriginalEntry != null) put("ne", cat.newOriginalEntry)
             })
         }
         root.put("catalog", catalogArr)
@@ -1013,6 +1087,8 @@ object MappingCompareEngine {
                 val oldCode = if (obj.isNull("oc")) null else obj.getString("oc")
                 val newCode = if (obj.isNull("nc")) null else obj.getString("nc")
                 val cat = obj.getString("c")
+                val oldOrig = obj.optString("oe", "").ifEmpty { null }
+                val newOrig = obj.optString("ne", "").ifEmpty { null }
                 val sfArr = obj.getJSONArray("sf")
                 val oldSubs = ArrayList<SubFlag>()
                 val newSubs = ArrayList<SubFlag>()
@@ -1029,10 +1105,12 @@ object MappingCompareEngine {
                     }
                 }
                 if (oldCode != null) {
-                    oldReconstructed.add(UniversalFlag(oldCode, flagName, oldSubs, cat, "$oldCode:$flagName"))
+                    val raw = oldOrig ?: buildRawEntry(oldCode, flagName, oldSubs)
+                    oldReconstructed.add(UniversalFlag(oldCode, flagName, oldSubs, cat, raw))
                 }
                 if (newCode != null) {
-                    newReconstructed.add(UniversalFlag(newCode, flagName, newSubs, cat, "$newCode:$flagName"))
+                    val raw = newOrig ?: buildRawEntry(newCode, flagName, newSubs)
+                    newReconstructed.add(UniversalFlag(newCode, flagName, newSubs, cat, raw))
                 }
             }
 
@@ -1117,5 +1195,12 @@ object MappingCompareEngine {
             isValid = true,
             validationError = null
         )
+    }
+
+    private fun buildRawEntry(code: String, name: String, subs: List<SubFlag>): String {
+        return buildString {
+            append(code).append(':').append(name)
+            subs.forEach { append(':').append(it.code).append(':').append(it.name) }
+        }
     }
 }

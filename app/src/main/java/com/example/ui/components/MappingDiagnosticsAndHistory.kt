@@ -69,20 +69,28 @@ fun MappingHealthDiagnosticsSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         DiagnosticsSourceCard(
-            title = "OLD MAPPING HEALTH & DIAGNOSTICS",
+            title = "OLD MAPPING HEALTH & COMPLETENESS",
             diagnostics = report.oldDiagnostics,
             onInspectFlagByName = onInspectFlagByName,
             onCopy = onCopy
         )
 
         DiagnosticsSourceCard(
-            title = "NEW MAPPING HEALTH & DIAGNOSTICS",
+            title = "NEW MAPPING HEALTH & COMPLETENESS",
             diagnostics = report.newDiagnostics,
             onInspectFlagByName = onInspectFlagByName,
             onCopy = onCopy
         )
 
-        // Potential Rename Candidates
+        // Duplicate Cleanup Suggestions Card
+        if (report.cleanupSuggestions.isNotEmpty()) {
+            DuplicateCleanupSuggestionsCard(
+                report = report,
+                onCopy = onCopy
+            )
+        }
+
+        // Potential Rename Candidates (Uncertain - clearly separated)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -99,7 +107,7 @@ fun MappingHealthDiagnosticsSection(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Matched by identical code between removed & new entries. Shown as candidates only (not auto-confirmed).",
+                text = "Uncertain candidates matched by identical code between removed & new entries (not auto-confirmed).",
                 color = TextSecondary,
                 fontSize = 11.sp
             )
@@ -121,6 +129,201 @@ fun MappingHealthDiagnosticsSection(
                         }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun DuplicateCleanupSuggestionsCard(
+    report: ComparisonReport,
+    onCopy: (String, String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(AmoledCard)
+            .border(1.dp, WarningYellow.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "DUPLICATE CLEANUP SUGGESTIONS (${report.cleanupSuggestions.size})",
+            color = WarningYellow,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Review before editing mapping JSON. Original files are never altered automatically.",
+            color = TextSecondary,
+            fontSize = 11.sp
+        )
+        report.cleanupSuggestions.take(40).forEach { sug ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(AmoledBackground)
+                    .border(1.dp, AmoledBorder, RoundedCornerShape(8.dp))
+                    .clickable { onCopy(sug.rawEntry, "Duplicate Raw Entry") }
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "[${sug.sourceSide}] ${sug.suggestionType}",
+                        color = WarningYellow,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Code: ${sug.flagCode}",
+                        color = TextTertiary,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                Text(
+                    text = sug.recommendation,
+                    color = TextPrimary,
+                    fontSize = 11.5.sp
+                )
+                Text(
+                    text = sug.rawEntry,
+                    color = TextTertiary,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 2
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DuplicatesDiagnosticsView(
+    report: ComparisonReport,
+    onInspectFlagByName: (String) -> Unit,
+    onCopy: (String, String) -> Unit
+) {
+    val dupFlags = remember(report.catalogFlags) {
+        report.catalogFlags.filter { it.isDuplicateInOld || it.isDuplicateInNew }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        DuplicateCleanupSuggestionsCard(report = report, onCopy = onCopy)
+
+        val oldDups = report.oldDiagnostics?.let { it.duplicateUniversalEntries + it.duplicateSubFlagEntries }.orEmpty()
+        val newDups = report.newDiagnostics?.let { it.duplicateUniversalEntries + it.duplicateSubFlagEntries }.orEmpty()
+
+        IssueGroupBlock(
+            label = "New Mapping Duplicate Entries",
+            issues = newDups,
+            accentColor = WarningYellow,
+            onInspectFlagByName = onInspectFlagByName,
+            onCopy = onCopy,
+            initiallyExpanded = true
+        )
+        IssueGroupBlock(
+            label = "Old Mapping Duplicate Entries",
+            issues = oldDups,
+            accentColor = WarningYellow,
+            onInspectFlagByName = onInspectFlagByName,
+            onCopy = onCopy,
+            initiallyExpanded = true
+        )
+        Text(
+            text = "DUPLICATE CATALOG FLAGS (${dupFlags.size})",
+            color = TextTertiary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+        dupFlags.take(80).forEach { item ->
+            CatalogUniversalCard(
+                item = item,
+                showExpandSubFlags = false,
+                onOpenDetail = { onInspectFlagByName(item.name) },
+                onCopy = onCopy
+            )
+        }
+    }
+}
+
+@Composable
+fun InvalidEntriesDiagnosticsView(
+    report: ComparisonReport,
+    onInspectFlagByName: (String) -> Unit,
+    onCopy: (String, String) -> Unit
+) {
+    val newInvalid = report.newDiagnostics?.let {
+        it.malformedEntries + it.missingNameEntries + it.emptySubFlagEntries + it.subFlagConsistencyIssues
+    }.orEmpty()
+    val oldInvalid = report.oldDiagnostics?.let {
+        it.malformedEntries + it.missingNameEntries + it.emptySubFlagEntries + it.subFlagConsistencyIssues
+    }.orEmpty()
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        IssueGroupBlock(
+            label = "New Mapping Invalid / Empty Subflag / Conflict Entries",
+            issues = newInvalid,
+            accentColor = DangerRed,
+            onInspectFlagByName = onInspectFlagByName,
+            onCopy = onCopy,
+            initiallyExpanded = true
+        )
+        IssueGroupBlock(
+            label = "Old Mapping Invalid / Empty Subflag / Conflict Entries",
+            issues = oldInvalid,
+            accentColor = DangerRed,
+            onInspectFlagByName = onInspectFlagByName,
+            onCopy = onCopy,
+            initiallyExpanded = true
+        )
+    }
+}
+
+@Composable
+fun UnknownCategoriesDiagnosticsView(
+    report: ComparisonReport,
+    onInspectFlagByName: (String) -> Unit,
+    onCopy: (String, String) -> Unit
+) {
+    val unknownFlags = remember(report.catalogFlags) {
+        report.catalogFlags.filter { it.isUnknownCategory }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "FLAGS MAPPED TO 'OTHER' CATEGORY (${unknownFlags.size})",
+            color = InfoBlue,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+        if (unknownFlags.isEmpty()) {
+            Text(
+                text = "Every detected universal flag matched a known feature category.",
+                color = AccentGreen,
+                fontSize = 12.sp
+            )
+        } else {
+            unknownFlags.take(100).forEach { item ->
+                CatalogUniversalCard(
+                    item = item,
+                    showExpandSubFlags = false,
+                    onOpenDetail = { onInspectFlagByName(item.name) },
+                    onCopy = onCopy
+                )
             }
         }
     }
@@ -155,9 +358,9 @@ private fun DiagnosticsSourceCard(
             )
             if (diagnostics != null) {
                 Text(
-                    text = "Score: ${diagnostics.healthScore}%",
+                    text = "Health ${diagnostics.healthScore}% • Comp ${diagnostics.completenessPercent}%",
                     color = if (diagnostics.healthScore >= 85) AccentGreen else WarningYellow,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
@@ -179,9 +382,25 @@ private fun DiagnosticsSourceCard(
             )
 
             IssueGroupBlock(
-                label = "Invalid / Malformed Entries",
+                label = "Invalid / Malformed / Missing Name",
                 issues = diagnostics.malformedEntries + diagnostics.missingNameEntries,
                 accentColor = DangerRed,
+                onInspectFlagByName = onInspectFlagByName,
+                onCopy = onCopy
+            )
+
+            IssueGroupBlock(
+                label = "Empty Subflag Entries",
+                issues = diagnostics.emptySubFlagEntries,
+                accentColor = UpdatedOrange,
+                onInspectFlagByName = onInspectFlagByName,
+                onCopy = onCopy
+            )
+
+            IssueGroupBlock(
+                label = "Subflag Code Consistency Conflicts",
+                issues = diagnostics.subFlagConsistencyIssues,
+                accentColor = WarningYellow,
                 onInspectFlagByName = onInspectFlagByName,
                 onCopy = onCopy
             )
@@ -211,9 +430,10 @@ private fun IssueGroupBlock(
     issues: List<DiagnosticIssue>,
     accentColor: Color,
     onInspectFlagByName: (String) -> Unit,
-    onCopy: (String, String) -> Unit
+    onCopy: (String, String) -> Unit,
+    initiallyExpanded: Boolean = false
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(initiallyExpanded) }
 
     Column(
         modifier = Modifier
@@ -233,7 +453,8 @@ private fun IssueGroupBlock(
                 text = label,
                 color = TextSecondary,
                 fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
             )
             Text(
                 text = "${issues.size}",
@@ -278,7 +499,7 @@ private fun IssueGroupBlock(
             }
             if (issues.size > 50) {
                 Text(
-                    text = "+ ${issues.size - 50} more (Export Unmapped & Invalid report for full list)",
+                    text = "+ ${issues.size - 50} more (Export report for full list)",
                     color = TextTertiary,
                     fontSize = 10.sp,
                     modifier = Modifier.padding(top = 4.dp)

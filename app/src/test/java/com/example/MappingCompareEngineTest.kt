@@ -2,6 +2,7 @@ package com.example
 
 import com.example.data.MappingCompareEngine
 import com.example.data.MappingDiagnosticsParser
+import com.example.data.MappingIntelligenceAnalyzer
 import com.example.data.MetaConfigParser
 import com.example.model.CatalogAvailability
 import com.example.model.ExportFileFormat
@@ -249,13 +250,17 @@ class MappingCompareEngineTest {
         assertEquals(1, jsonObj.getJSONArray("newUniversalFlags").length())
         assertEquals(1, jsonObj.getJSONArray("newSubFlags").length())
 
-        // All 7 export types produce valid TXT & JSON
+        // All 10 export types produce valid TXT & JSON
         for (exportType in ExportReportType.entries) {
             val txt = MappingCompareEngine.generateExportContent(report, exportType, ExportFileFormat.TXT)
-            assertTrue(txt.isNotBlank())
+            assertTrue("Expected non-blank TXT for $exportType", txt.isNotBlank())
             val js = MappingCompareEngine.generateExportContent(report, exportType, ExportFileFormat.JSON)
             val parsed = JSONObject(js)
-            assertNotNull(parsed.getJSONObject("summary"))
+            when (exportType) {
+                ExportReportType.SINGLE_CATEGORY_EXPORT -> assertTrue(parsed.has("flags"))
+                ExportReportType.MAPPING_HEALTH_REPORT -> assertTrue(parsed.has("newHealthScore"))
+                else -> assertNotNull(parsed.getJSONObject("summary"))
+            }
         }
 
         // Snapshot serialize / deserialize roundtrip
@@ -267,5 +272,195 @@ class MappingCompareEngineTest {
         assertEquals(report.catalogFlags.size, restored.catalogFlags.size)
         assertEquals(report.newFlags.size, restored.newFlags.size)
         assertEquals(report.newSubFlags.size, restored.newSubFlags.size)
+    }
+
+    @Test
+    fun testParentChildSubFlagMovementDetection() {
+        val oldFlags = listOf(
+            makeFlag("100", "ig_old_parent", "Feed", listOf("0" to "shared_sub_enabled")),
+            makeFlag("200", "ig_new_parent", "Reels", listOf("0" to "keep_me"))
+        )
+        val newFlags = listOf(
+            makeFlag("100", "ig_old_parent", "Feed", emptyList()),
+            makeFlag("200", "ig_new_parent", "Reels", listOf("0" to "keep_me", "4" to "shared_sub_enabled"))
+        )
+
+        val report = MappingCompareEngine.compare(
+            oldFlags = oldFlags,
+            newFlags = newFlags,
+            oldSourceName = "v1.json",
+            newSourceName = "v2.json"
+        )
+
+        assertEquals(1, report.parentChildChanges.size)
+        val shift = report.parentChildChanges[0]
+        assertEquals("shared_sub_enabled", shift.subFlagName)
+        assertEquals("ig_old_parent", shift.oldParentFlagName)
+        assertEquals("ig_new_parent", shift.newParentFlagName)
+        assertEquals("0", shift.oldSubCode)
+        assertEquals("4", shift.newSubCode)
+        assertEquals(1, report.summary.parentChildChangesCount)
+    }
+
+    @Test
+    fun testNamespaceStatsGrowthPercentAndThreadsP92Detection() {
+        val oldFlags = listOf(
+            makeFlag("100", "ig_feed_card", "Feed"),
+            makeFlag("101", "p92_post_composer", "Threads App/P92")
+        )
+        val newFlags = listOf(
+            makeFlag("100", "ig_feed_card", "Feed", listOf("0" to "a", "1" to "b")),
+            makeFlag("101", "p92_post_composer", "Threads App/P92"),
+            makeFlag("102", "barcelona_reply_thread", "Threads App/P92"),
+            makeFlag("103", "ig_story_sticker", "Stories")
+        )
+
+        val report = MappingCompareEngine.compare(
+            oldFlags = oldFlags,
+            newFlags = newFlags,
+            oldSourceName = "old.json",
+            newSourceName = "new.json"
+        )
+
+        // 2 -> 4 universal flags = +100.0%
+        assertEquals(100f, report.summary.mappingGrowthPercent, 0.01f)
+        // 0 -> 2 subflags = +100.0%
+        assertEquals(100f, report.summary.subflagGrowthPercent, 0.01f)
+        assertEquals(2, report.summary.threadsP92FlagsCount)
+
+        assertTrue(MappingIntelligenceAnalyzer.isThreadsOrP92("barcelona_reply_thread"))
+        assertTrue(MappingIntelligenceAnalyzer.isThreadsOrP92("threads_composer"))
+        assertFalse(MappingIntelligenceAnalyzer.isThreadsOrP92("ig_feed_card"))
+
+        val p92Stat = report.namespaceStats.first { it.prefix == "p92_" }
+        assertTrue(p92Stat.isThreadsP92)
+        assertEquals(1, p92Stat.oldCount)
+        assertEquals(1, p92Stat.newCount)
+
+        val igStat = report.namespaceStats.first { it.prefix == "ig_" }
+        assertEquals(1, igStat.oldCount)
+        assertEquals(2, igStat.newCount)
+        assertEquals(1, igStat.addedCount)
+        assertEquals(100f, igStat.growthPercent, 0.01f)
+    }
+
+    @Test
+    fun testEmptySubFlagDiagnosticsCodeConsistencyAndCleanupSuggestions() {
+        val json = """
+            [
+              "100:ig_test_flag:0:sub_a:0:sub_b",
+              "200:ig_empty_sub_flag::",
+              "250:ig_incomplete_sub_flag:0:",
+              "300:ig_dup_flag:1:enabled",
+              "300:ig_dup_flag:1:enabled"
+            ]
+        """.trimIndent()
+
+        val diag = MappingDiagnosticsParser.parseJsonString(json, "diag.json")
+        assertTrue(diag.isValid)
+        assertEquals(1, diag.emptySubFlagEntries.size)
+        assertEquals(1, diag.missingNameEntries.size)
+        assertEquals(1, diag.subFlagConsistencyIssues.size)
+        assertTrue(diag.completenessPercent in 1..100)
+
+        val suggestions = MappingIntelligenceAnalyzer.buildCleanupSuggestions(null, diag)
+        assertTrue(suggestions.isNotEmpty())
+        assertTrue(suggestions.any { it.flagName == "ig_dup_flag" })
+    }
+
+    @Test
+    fun testMultiFileComparisonMatrixAndExports() {
+        val src1 = MappingDiagnosticsParser.parseJsonString(
+            """["10:ig_common:0:a", "20:ig_only_one"]""",
+            "v1.json"
+        )
+        val src2 = MappingDiagnosticsParser.parseJsonString(
+            """["10:ig_common:0:a", "30:ig_divergent:0:x"]""",
+            "v2.json"
+        )
+        val src3 = MappingDiagnosticsParser.parseJsonString(
+            """["11:ig_common:0:a:1:b", "35:ig_divergent:0:x", "40:p92_new"]""",
+            "v3.json"
+        )
+
+        val multi = MappingIntelligenceAnalyzer.compareMultipleMappings(
+            listOf("v1.json" to src1, "v2.json" to src2, "v3.json" to src3)
+        )
+
+        assertEquals(4, multi.uniqueFlagsTotal)
+        assertEquals(1, multi.commonInAllCount) // ig_common
+        assertEquals(2, multi.onlyInOneFileCount) // ig_only_one, p92_new
+        assertEquals(2, multi.codeDivergentCount) // ig_common (10 vs 11), ig_divergent (30 vs 35)
+        assertEquals(2, multi.pairwiseDeltas.size)
+        assertNotNull(multi.baselineVsLatestReport)
+
+        val txtExport = MappingIntelligenceAnalyzer.generateMultiFileExport(multi, ExportFileFormat.TXT)
+        assertTrue(txtExport.contains("Multi-File Comparison Matrix"))
+        assertTrue(txtExport.contains("ig_common"))
+
+        val jsonExport = JSONObject(
+            MappingIntelligenceAnalyzer.generateMultiFileExport(multi, ExportFileFormat.JSON)
+        )
+        assertEquals(4, jsonExport.getInt("uniqueFlagsTotal"))
+        assertEquals(1, jsonExport.getInt("commonInAllCount"))
+    }
+
+    @Test
+    fun testSessionDiffSearchIndexAndSingleCategoryHealthExports() {
+        val oldFlags = listOf(
+            makeFlag("100", "ig_feed_video", "Feed", listOf("0" to "autoplay")),
+            makeFlag("200", "ig_stories_music", "Stories")
+        )
+        val newFlagsA = listOf(
+            makeFlag("100", "ig_feed_video", "Feed", listOf("0" to "autoplay")),
+            makeFlag("300", "ig_reels_hdr", "Reels", listOf("1" to "hdr_enabled"))
+        )
+        val newFlagsB = listOf(
+            makeFlag("105", "ig_feed_video", "Feed", listOf("0" to "autoplay")),
+            makeFlag("300", "ig_reels_hdr", "Reels", listOf("1" to "hdr_enabled")),
+            makeFlag("400", "p92_threads_badge", "Threads App/P92")
+        )
+
+        val reportA = MappingCompareEngine.compare(oldFlags, newFlagsA, "base", "relA")
+        val reportB = MappingCompareEngine.compare(oldFlags, newFlagsB, "base", "relB")
+
+        val sessionDiff = MappingIntelligenceAnalyzer.compareHistorySessions(
+            sessionALabel = "Session A",
+            reportA = reportA,
+            sessionBLabel = "Session B",
+            reportB = reportB
+        )
+        assertTrue(sessionDiff.newlyAppearedInB.contains("p92_threads_badge"))
+        assertTrue(sessionDiff.statusTransitions.any { it.flagName == "ig_feed_video" })
+
+        val index = MappingIntelligenceAnalyzer.buildSearchIndex(reportB)
+        assertTrue(
+            index.entries.any {
+                MappingIntelligenceAnalyzer.matchesEntryAdvanced(it, "reels hdr")
+            }
+        )
+        assertTrue(
+            index.entries.any {
+                MappingIntelligenceAnalyzer.matchesEntryAdvanced(it, "autoplay 105")
+            }
+        )
+        assertFalse(
+            index.entries.any {
+                MappingIntelligenceAnalyzer.matchesEntryAdvanced(it, "nonexistent_token_xyz")
+            }
+        )
+
+        val singleCatJson = JSONObject(
+            MappingIntelligenceAnalyzer.generateSingleCategoryExport(
+                report = reportB,
+                categoryName = "Reels",
+                format = ExportFileFormat.JSON
+            )
+        )
+        assertEquals(1, singleCatJson.getInt("count"))
+
+        val healthTxt = MappingIntelligenceAnalyzer.generateHealthReportExport(reportB, ExportFileFormat.TXT)
+        assertTrue(healthTxt.contains("Mapping Health & Intelligence Report"))
+        assertTrue(healthTxt.contains("Threads / P92 Flags:"))
     }
 }

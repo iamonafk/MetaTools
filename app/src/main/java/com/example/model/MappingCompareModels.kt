@@ -33,6 +33,8 @@ enum class DiagnosticIssueType {
     DUPLICATE_SUBFLAG,
     MALFORMED_ENTRY,
     MISSING_NAME,
+    EMPTY_SUBFLAG,
+    SUBFLAG_CODE_CONFLICT,
     UNKNOWN_CATEGORY
 }
 
@@ -43,6 +45,15 @@ data class DiagnosticIssue(
     val flagName: String = "",
     val flagCode: String = "",
     val reason: String
+)
+
+data class DuplicateCleanupSuggestion(
+    val sourceSide: String,
+    val flagName: String,
+    val flagCode: String,
+    val suggestionType: String,
+    val recommendation: String,
+    val rawEntry: String
 )
 
 data class MappingParseDiagnostics(
@@ -59,23 +70,32 @@ data class MappingParseDiagnostics(
     val missingNameEntries: List<DiagnosticIssue>,
     val unknownCategoryEntries: List<DiagnosticIssue>,
     val isValid: Boolean,
-    val validationError: String? = null
+    val validationError: String? = null,
+    val emptySubFlagEntries: List<DiagnosticIssue> = emptyList(),
+    val subFlagConsistencyIssues: List<DiagnosticIssue> = emptyList()
 ) {
     val duplicateCount: Int
         get() = duplicateUniversalEntries.size + duplicateSubFlagEntries.size
 
     val invalidCount: Int
-        get() = malformedEntries.size + missingNameEntries.size
+        get() = malformedEntries.size + missingNameEntries.size + emptySubFlagEntries.size
 
     val unknownCategoryCount: Int
         get() = unknownCategoryEntries.size
+
+    val completenessPercent: Int
+        get() {
+            if (!isValid || rawEntryCount <= 0) return 0
+            val validRatio = (validEntryCount.toFloat() / rawEntryCount.toFloat()) * 100f
+            return validRatio.toInt().coerceIn(0, 100)
+        }
 
     val healthScore: Int
         get() {
             if (!isValid || validEntryCount == 0) return 0
             val totalObserved = (rawEntryCount.coerceAtLeast(1)).toFloat()
-            val invalidPenalty = (malformedEntries.size + missingNameEntries.size) / totalObserved * 45f
-            val dupPenalty = (duplicateUniversalEntries.size + duplicateSubFlagEntries.size) / totalObserved * 25f
+            val invalidPenalty = invalidCount / totalObserved * 45f
+            val dupPenalty = duplicateCount / totalObserved * 25f
             val unknownPenalty = unknownCategoryEntries.size / totalObserved * 20f
             return (100f - invalidPenalty - dupPenalty - unknownPenalty).toInt().coerceIn(0, 100)
         }
@@ -134,6 +154,17 @@ data class UnchangedFlagItem(
     val flag: UniversalFlag
 )
 
+data class ParentChildChangeItem(
+    val subFlagName: String,
+    val oldParentFlagName: String,
+    val oldParentCode: String,
+    val newParentFlagName: String,
+    val newParentCode: String,
+    val oldSubCode: String,
+    val newSubCode: String,
+    val category: String
+)
+
 data class PotentialRenameCandidate(
     val scope: String, // "UNIVERSAL" or "SUBFLAG"
     val sharedCode: String,
@@ -141,6 +172,16 @@ data class PotentialRenameCandidate(
     val newName: String,
     val parentFlagName: String? = null,
     val category: String
+)
+
+data class NamespaceStatItem(
+    val prefix: String,
+    val oldCount: Int,
+    val newCount: Int,
+    val addedCount: Int,
+    val removedCount: Int,
+    val growthPercent: Float,
+    val isThreadsP92: Boolean = false
 )
 
 enum class CatalogAvailability(val label: String) {
@@ -156,6 +197,66 @@ enum class FlagChangeStatus(val label: String) {
     UPDATED("Updated"),
     UNCHANGED("Unchanged")
 }
+
+enum class CatalogDisplayMode(val label: String) {
+    EXPANDED("Expanded"),
+    COMPACT("Compact")
+}
+
+enum class CompareMode(val label: String) {
+    TWO_FILE("2-File Diff"),
+    MULTI_FILE("Multi-File (3+)"),
+    SESSION_DIFF("Session Diff")
+}
+
+data class CompareSourceSlot(
+    val id: String,
+    val label: String,
+    val source: CompareSource? = null,
+    val preview: SourcePreviewInfo? = null
+)
+
+data class MultiFileFlagPresence(
+    val flagName: String,
+    val category: String,
+    val namespacePrefix: String,
+    val codesBySource: Map<String, String?>,
+    val subflagCountsBySource: Map<String, Int>,
+    val presentInSourceLabels: List<String>,
+    val distinctCodesCount: Int,
+    val subFlagNames: List<String> = emptyList()
+)
+
+data class MultiFileComparisonReport(
+    val sourceNames: List<String>,
+    val sourcePreviews: List<SourcePreviewInfo>,
+    val uniqueFlagsTotal: Int,
+    val commonInAllCount: Int,
+    val onlyInOneFileCount: Int,
+    val codeDivergentCount: Int,
+    val entries: List<MultiFileFlagPresence>,
+    val baselineVsLatestReport: ComparisonReport?,
+    val pairwiseDeltas: List<String>,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class SessionDiffItem(
+    val flagName: String,
+    val category: String,
+    val statusInA: String,
+    val statusInB: String
+)
+
+data class SessionDiffReport(
+    val sessionALabel: String,
+    val sessionBLabel: String,
+    val newlyAppearedInB: List<String>,
+    val disappearedInB: List<String>,
+    val statusTransitions: List<SessionDiffItem>,
+    val deltaNewCount: Int,
+    val deltaRemovedCount: Int,
+    val deltaUpdatedCount: Int
+)
 
 data class CatalogSubFlagDetail(
     val name: String,
@@ -176,10 +277,19 @@ data class CatalogFlagItem(
     val newSubFlagCount: Int,
     val isDuplicateInOld: Boolean = false,
     val isDuplicateInNew: Boolean = false,
-    val isUnknownCategory: Boolean = false
+    val isUnknownCategory: Boolean = false,
+    val oldOriginalEntry: String? = null,
+    val newOriginalEntry: String? = null
 ) {
     val displayCode: String get() = newCode ?: oldCode ?: ""
     val totalDistinctSubFlags: Int get() = subFlags.size
+    val namespacePrefix: String
+        get() {
+            val idx = name.indexOf('_')
+            return if (idx in 1..14) "${name.substring(0, idx)}_" else "other"
+        }
+    val isOnlyInOneMapping: Boolean
+        get() = availability == CatalogAvailability.OLD_ONLY || availability == CatalogAvailability.NEW_ONLY
 }
 
 data class CategoryAnalyticsItem(
@@ -192,7 +302,11 @@ data class CategoryAnalyticsItem(
     val updatedFlagsCount: Int,
     val unchangedFlagsCount: Int,
     val totalSubFlags: Int,
-    val unchangedPercent: Int
+    val unchangedPercent: Int,
+    val oldSubFlagsCount: Int = 0,
+    val newSubFlagsCount: Int = 0,
+    val flagGrowthPercent: Float = 0f,
+    val subflagGrowthPercent: Float = 0f
 )
 
 data class ComparisonSummary(
@@ -202,9 +316,9 @@ data class ComparisonSummary(
     val totalNewFlags: Int,
     val totalOldSubFlags: Int = 0,
     val totalNewSubFlags: Int = 0,
-    val newFlagsCount: Int, // New Universal + New Subflags (kept for compatibility)
-    val removedFlagsCount: Int, // Removed Universal + Removed Subflags (kept for compatibility)
-    val updatedFlagsCount: Int, // Updated Flag Codes + Updated Subflag Codes (kept for compatibility)
+    val newFlagsCount: Int,
+    val removedFlagsCount: Int,
+    val updatedFlagsCount: Int,
     val unchangedFlagsCount: Int,
     val newUniversalFlagsCount: Int = 0,
     val removedUniversalFlagsCount: Int = 0,
@@ -220,7 +334,12 @@ data class ComparisonSummary(
     val newByteSize: Long = 0L,
     val oldHealthScore: Int = 100,
     val newHealthScore: Int = 100,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val mappingGrowthPercent: Float = 0f,
+    val subflagGrowthPercent: Float = 0f,
+    val parentChildChangesCount: Int = 0,
+    val emptySubflagEntriesCount: Int = 0,
+    val threadsP92FlagsCount: Int = 0
 )
 
 data class ComparisonReport(
@@ -236,7 +355,10 @@ data class ComparisonReport(
     val catalogFlags: List<CatalogFlagItem> = emptyList(),
     val categoryAnalytics: List<CategoryAnalyticsItem> = emptyList(),
     val oldDiagnostics: MappingParseDiagnostics? = null,
-    val newDiagnostics: MappingParseDiagnostics? = null
+    val newDiagnostics: MappingParseDiagnostics? = null,
+    val parentChildChanges: List<ParentChildChangeItem> = emptyList(),
+    val namespaceStats: List<NamespaceStatItem> = emptyList(),
+    val cleanupSuggestions: List<DuplicateCleanupSuggestion> = emptyList()
 ) {
     val totalNewCount: Int get() = newFlags.size + newSubFlags.size
     val totalRemovedCount: Int get() = removedFlags.size + removedSubFlags.size
@@ -272,11 +394,35 @@ enum class CompareSectionTab(val label: String) {
     HISTORY("History")
 }
 
+/**
+ * 15 dedicated organization sections for Mapping File Compare & Catalog Analyzer.
+ */
+enum class CompareResultSection(val label: String) {
+    OVERVIEW("Overview"),
+    COMPLETE_CATALOG("Complete Catalog"),
+    NEW_FLAGS("New Flags"),
+    REMOVED_FLAGS("Removed Flags"),
+    UPDATED_FLAGS("Updated Flags"),
+    UNCHANGED_FLAGS("Unchanged Flags"),
+    NEW_SUBFLAGS("New Subflags"),
+    REMOVED_SUBFLAGS("Removed Subflags"),
+    UPDATED_SUBFLAGS("Updated Subflags"),
+    CATEGORIES("Categories"),
+    DUPLICATES("Duplicates"),
+    INVALID_ENTRIES("Invalid Entries"),
+    UNKNOWN_CATEGORIES("Unknown Categories"),
+    MAPPING_HEALTH("Mapping Health"),
+    EXPORT_REPORTS("Export Reports")
+}
+
 enum class CatalogSortOption(val label: String) {
-    ALPHABETICAL("Alphabetical"),
-    CODE("Flag Code"),
+    ALPHABETICAL("Alphabetical Flag"),
+    ALPHA_SUBFLAG("Alphabetical Subflag"),
+    CODE("Universal Code"),
+    SUBFLAG_CODE("Subflag Code"),
+    SUBFLAG_COUNT("Highest Subflag Count"),
+    LOWEST_SUBFLAG_COUNT("Lowest Subflag Count"),
     CATEGORY("Category"),
-    SUBFLAG_COUNT("Subflag Count"),
     STATUS("Change Status")
 }
 
@@ -294,7 +440,7 @@ enum class ExportReportType(
     COMPLETE_COMPARISON(
         title = "Complete Comparison Report",
         defaultFileName = "Mapping_Comparison_Report",
-        description = "Summary, new, removed, updated, unchanged flags, and diagnostics"
+        description = "Summary, new, removed, updated, unchanged flags, parent-child shifts, and diagnostics"
     ),
     NEW_ONLY(
         title = "New Flags Report",
@@ -319,12 +465,27 @@ enum class ExportReportType(
     CATEGORY_CATALOG(
         title = "Category-Wise Catalog",
         defaultFileName = "Category_Wise_Catalog",
-        description = "All 66 MetaTools categories with counts and categorized flags"
+        description = "All 66 MetaTools categories with counts, growth %, and categorized flags"
+    ),
+    SINGLE_CATEGORY_EXPORT(
+        title = "Selected Category Catalog",
+        defaultFileName = "Category_Export",
+        description = "Export only the currently selected category from the catalog"
+    ),
+    MAPPING_HEALTH_REPORT(
+        title = "Mapping Health Report",
+        defaultFileName = "Mapping_Health_Report",
+        description = "Completeness %, uniqueness validation, namespaces, P92/Threads & structure checks"
     ),
     UNMAPPED_INVALID(
-        title = "Unmapped & Invalid Entries",
-        defaultFileName = "Unmapped_Invalid_Entries",
-        description = "Duplicates, malformed lines, missing names, and Other category entries"
+        title = "Duplicates & Invalid Entries",
+        defaultFileName = "Duplicates_Invalid_Report",
+        description = "Duplicates, cleanup suggestions, malformed/empty subflags, and Other category entries"
+    ),
+    MULTI_FILE_MATRIX_REPORT(
+        title = "Multi-File Matrix Report",
+        defaultFileName = "Multi_File_Matrix_Report",
+        description = "Cross-file comparison matrix for 3+ mappings (unique, shared, and divergent codes)"
     )
 }
 

@@ -8,19 +8,25 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.CompareSearchIndex
 import com.example.data.FlagAnalysisEngine
 import com.example.data.MappingCompareEngine
 import com.example.data.MappingDiagnosticsParser
+import com.example.data.MappingIntelligenceAnalyzer
 import com.example.data.MappingResult
 import com.example.data.MetaConfigRepository
+import com.example.model.CatalogDisplayMode
 import com.example.model.CatalogFlagItem
 import com.example.model.CatalogScopeFilter
 import com.example.model.CatalogSortOption
 import com.example.model.CompareFilterTab
 import com.example.model.CompareHistoryRecord
+import com.example.model.CompareMode
 import com.example.model.CompareQuickFilter
+import com.example.model.CompareResultSection
 import com.example.model.CompareSectionTab
 import com.example.model.CompareSource
+import com.example.model.CompareSourceSlot
 import com.example.model.ComparisonReport
 import com.example.model.ExportFileFormat
 import com.example.model.ExportReportType
@@ -28,10 +34,13 @@ import com.example.model.FlagAnalysisFilter
 import com.example.model.FlagCategory
 import com.example.model.FlagSearchResult
 import com.example.model.MappingSource
+import com.example.model.MultiFileComparisonReport
 import com.example.model.ParsedBackupState
+import com.example.model.SessionDiffReport
 import com.example.model.SourcePreviewInfo
 import com.example.model.SubFlag
 import com.example.model.UniversalFlag
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -163,10 +172,68 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
     private val _compareHistory = MutableStateFlow<List<CompareHistoryRecord>>(emptyList())
     val compareHistory: StateFlow<List<CompareHistoryRecord>> = _compareHistory.asStateFlow()
 
+    // Advanced Compare & Analyzer state (3+/Multi-file, Session Diff, 15 Sections, Filters, Productivity)
+    private val _compareMode = MutableStateFlow(CompareMode.TWO_FILE)
+    val compareMode: StateFlow<CompareMode> = _compareMode.asStateFlow()
+
+    private val _multiCompareSlots = MutableStateFlow(
+        listOf(
+            CompareSourceSlot(id = "slot_1", label = "Mapping #1 (Baseline)", source = CompareSource.BuiltIn),
+            CompareSourceSlot(id = "slot_2", label = "Mapping #2"),
+            CompareSourceSlot(id = "slot_3", label = "Mapping #3")
+        )
+    )
+    val multiCompareSlots: StateFlow<List<CompareSourceSlot>> = _multiCompareSlots.asStateFlow()
+
+    private val _multiFileReport = MutableStateFlow<MultiFileComparisonReport?>(null)
+    val multiFileReport: StateFlow<MultiFileComparisonReport?> = _multiFileReport.asStateFlow()
+
+    private val _sessionDiffReport = MutableStateFlow<SessionDiffReport?>(null)
+    val sessionDiffReport: StateFlow<SessionDiffReport?> = _sessionDiffReport.asStateFlow()
+
+    private val _activeResultSection = MutableStateFlow(CompareResultSection.OVERVIEW)
+    val activeResultSection: StateFlow<CompareResultSection> = _activeResultSection.asStateFlow()
+
+    private val _selectedCatalogCategories = MutableStateFlow<Set<String>>(emptySet())
+    val selectedCatalogCategories: StateFlow<Set<String>> = _selectedCatalogCategories.asStateFlow()
+
+    private val _namespaceFilter = MutableStateFlow("All")
+    val namespaceFilter: StateFlow<String> = _namespaceFilter.asStateFlow()
+
+    private val _exactSubflagCountFilter = MutableStateFlow<Int?>(null)
+    val exactSubflagCountFilter: StateFlow<Int?> = _exactSubflagCountFilter.asStateFlow()
+
+    private val _onlyInOneMappingFilter = MutableStateFlow(false)
+    val onlyInOneMappingFilter: StateFlow<Boolean> = _onlyInOneMappingFilter.asStateFlow()
+
+    private val _favoritesOnlyFilter = MutableStateFlow(false)
+    val favoritesOnlyFilter: StateFlow<Boolean> = _favoritesOnlyFilter.asStateFlow()
+
+    private val _favoriteFlagNames = MutableStateFlow<Set<String>>(emptySet())
+    val favoriteFlagNames: StateFlow<Set<String>> = _favoriteFlagNames.asStateFlow()
+
+    private val _catalogDisplayMode = MutableStateFlow(CatalogDisplayMode.EXPANDED)
+    val catalogDisplayMode: StateFlow<CatalogDisplayMode> = _catalogDisplayMode.asStateFlow()
+
+    private val _expandAllCatalogCategories = MutableStateFlow(false)
+    val expandAllCatalogCategories: StateFlow<Boolean> = _expandAllCatalogCategories.asStateFlow()
+
+    private val _selectedResultKeys = MutableStateFlow<Set<String>>(emptySet())
+    val selectedResultKeys: StateFlow<Set<String>> = _selectedResultKeys.asStateFlow()
+
+    private val _compareSearchHistory = MutableStateFlow<List<String>>(emptyList())
+    val compareSearchHistory: StateFlow<List<String>> = _compareSearchHistory.asStateFlow()
+
+    private val _compareSearchIndex = MutableStateFlow<CompareSearchIndex?>(null)
+    val compareSearchIndex: StateFlow<CompareSearchIndex?> = _compareSearchIndex.asStateFlow()
+
     init {
         loadRecentSearches()
+        _favoriteFlagNames.value = repository.getFavoriteFlagNames()
+        _compareSearchHistory.value = repository.getCompareSearchHistory()
         loadInitialData()
         previewSourceAsync(isOld = true, source = CompareSource.BuiltIn)
+        previewMultiSlotAsync("slot_1", CompareSource.BuiltIn)
         loadCompareHistoryAndLastSession()
 
         // Debounced search trigger
@@ -415,8 +482,15 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
                 val restored = repository.loadLastComparisonSnapshot()
                 if (restored != null) {
                     _comparisonReport.value = restored
+                    rebuildSearchIndexAsync(restored)
                 }
             }
+        }
+    }
+
+    private fun rebuildSearchIndexAsync(report: ComparisonReport) {
+        viewModelScope.launch(Dispatchers.Default) {
+            _compareSearchIndex.value = MappingIntelligenceAnalyzer.buildSearchIndex(report)
         }
     }
 
@@ -515,9 +589,14 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 val report = repository.compareMappings(old, new)
                 _comparisonReport.value = report
+                _multiFileReport.value = null
+                _sessionDiffReport.value = null
+                _selectedResultKeys.value = emptySet()
+                _activeResultSection.value = CompareResultSection.OVERVIEW
                 _compareSectionTab.value = CompareSectionTab.CHANGES
                 _compareFilterTab.value = CompareFilterTab.ALL
                 _compareQuickFilter.value = CompareQuickFilter.ALL
+                rebuildSearchIndexAsync(report)
                 repository.saveComparisonToHistory(report)
                 _compareHistory.value = repository.loadCompareHistoryList()
                 _uiEvents.emit(
@@ -533,13 +612,213 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // 3-File & Multi-File Comparison Management
+    fun setCompareMode(mode: CompareMode) {
+        _compareMode.value = mode
+    }
+
+    fun addMultiCompareSlot() {
+        val list = _multiCompareSlots.value
+        if (list.size >= 8) return
+        val nextNum = list.size + 1
+        _multiCompareSlots.value = list + CompareSourceSlot(
+            id = "slot_${System.currentTimeMillis()}_$nextNum",
+            label = "Mapping #$nextNum"
+        )
+    }
+
+    fun removeMultiCompareSlot(slotId: String) {
+        val list = _multiCompareSlots.value
+        if (list.size <= 2) return
+        _multiCompareSlots.value = list.filterNot { it.id == slotId }.mapIndexed { idx, slot ->
+            val defaultPrefix = if (idx == 0) "Mapping #1 (Baseline)" else "Mapping #${idx + 1}"
+            slot.copy(label = defaultPrefix)
+        }
+    }
+
+    fun setMultiSlotSource(slotId: String, source: CompareSource) {
+        _multiCompareSlots.value = _multiCompareSlots.value.map { slot ->
+            if (slot.id == slotId) slot.copy(source = source) else slot
+        }
+        previewMultiSlotAsync(slotId, source)
+    }
+
+    fun setMultiSlotFromUri(slotId: String, uri: Uri, displayName: String) {
+        setMultiSlotSource(slotId, CompareSource.DeviceFile(uri, displayName))
+    }
+
+    fun setMultiSlotFromPaste(slotId: String, rawJson: String, name: String) {
+        val label = name.trim().ifEmpty { "Pasted Mapping" }
+        setMultiSlotSource(slotId, CompareSource.PastedJson(rawJson, label))
+    }
+
+    private fun previewMultiSlotAsync(slotId: String, source: CompareSource?) {
+        if (source == null) return
+        viewModelScope.launch {
+            val preview = try {
+                val diag = repository.loadDiagnosticsFromSource(source)
+                MappingDiagnosticsParser.toSourcePreview(diag)
+            } catch (e: Exception) {
+                SourcePreviewInfo(
+                    sourceName = source.getLabel(),
+                    isValid = false,
+                    validationMessage = e.localizedMessage ?: "Failed to read source",
+                    universalFlagCount = 0,
+                    subFlagCount = 0,
+                    byteSize = 0L,
+                    duplicateCount = 0,
+                    invalidCount = 0,
+                    previewEntries = emptyList()
+                )
+            }
+            _multiCompareSlots.value = _multiCompareSlots.value.map { slot ->
+                if (slot.id == slotId) slot.copy(preview = preview) else slot
+            }
+        }
+    }
+
+    fun runMultiFileComparison() {
+        val selectedSources = _multiCompareSlots.value.mapNotNull { it.source }
+        if (selectedSources.size < 2) {
+            viewModelScope.launch {
+                _uiEvents.emit(UiEvent.ShowToast("Select at least 2 mapping files in Multi-File mode"))
+            }
+            return
+        }
+        viewModelScope.launch {
+            _isComparing.value = true
+            try {
+                val multiReport = repository.compareMultipleMappings(selectedSources)
+                _multiFileReport.value = multiReport
+                _sessionDiffReport.value = null
+                _selectedResultKeys.value = emptySet()
+                multiReport.baselineVsLatestReport?.let { baseRep ->
+                    _comparisonReport.value = baseRep
+                    rebuildSearchIndexAsync(baseRep)
+                }
+                _activeResultSection.value = CompareResultSection.OVERVIEW
+                _uiEvents.emit(
+                    UiEvent.ShowToast(
+                        "Compared ${multiReport.sourceNames.size} mappings: ${multiReport.uniqueFlagsTotal} unique flags, ${multiReport.onlyInOneFileCount} single-file only"
+                    )
+                )
+            } catch (e: Exception) {
+                _uiEvents.emit(UiEvent.ShowToast("Multi-file compare failed: ${e.message}"))
+            } finally {
+                _isComparing.value = false
+            }
+        }
+    }
+
+    fun compareTwoHistorySessions(recordA: CompareHistoryRecord, recordB: CompareHistoryRecord) {
+        viewModelScope.launch {
+            _isComparing.value = true
+            try {
+                val repA = repository.loadComparisonHistorySnapshot(recordA.id)
+                val repB = repository.loadComparisonHistorySnapshot(recordB.id)
+                if (repA == null || repB == null) {
+                    _uiEvents.emit(UiEvent.ShowToast("One or both saved session snapshots are unavailable"))
+                    return@launch
+                }
+                val diff = MappingIntelligenceAnalyzer.compareHistorySessions(
+                    sessionALabel = "${recordA.oldSourceName} → ${recordA.newSourceName}",
+                    reportA = repA,
+                    sessionBLabel = "${recordB.oldSourceName} → ${recordB.newSourceName}",
+                    reportB = repB
+                )
+                _sessionDiffReport.value = diff
+                _comparisonReport.value = repB
+                rebuildSearchIndexAsync(repB)
+                _activeResultSection.value = CompareResultSection.OVERVIEW
+                _uiEvents.emit(
+                    UiEvent.ShowToast(
+                        "Compared sessions: ${diff.newlyAppearedInB.size} newly appeared, ${diff.disappearedInB.size} disappeared"
+                    )
+                )
+            } finally {
+                _isComparing.value = false
+            }
+        }
+    }
+
     fun clearComparison() {
         _comparisonReport.value = null
+        _multiFileReport.value = null
+        _sessionDiffReport.value = null
+        _compareSearchIndex.value = null
         _compareSearchQuery.value = ""
         _compareFilterTab.value = CompareFilterTab.ALL
         _compareQuickFilter.value = CompareQuickFilter.ALL
         _compareSectionTab.value = CompareSectionTab.CHANGES
+        _activeResultSection.value = CompareResultSection.OVERVIEW
         _catalogCategoryFilter.value = "See All Flags"
+        _selectedCatalogCategories.value = emptySet()
+        _namespaceFilter.value = "All"
+        _exactSubflagCountFilter.value = null
+        _onlyInOneMappingFilter.value = false
+        _favoritesOnlyFilter.value = false
+        _selectedResultKeys.value = emptySet()
+    }
+
+    fun refreshAndReindexComparison() {
+        val currentReport = _comparisonReport.value ?: return
+        viewModelScope.launch {
+            _isComparing.value = true
+            try {
+                if (_compareMode.value == CompareMode.MULTI_FILE && _multiFileReport.value != null) {
+                    val selectedSources = _multiCompareSlots.value.mapNotNull { it.source }
+                    if (selectedSources.size >= 2) {
+                        val multi = repository.compareMultipleMappings(selectedSources)
+                        _multiFileReport.value = multi
+                        multi.baselineVsLatestReport?.let {
+                            _comparisonReport.value = it
+                            rebuildSearchIndexAsync(it)
+                        }
+                        _uiEvents.emit(UiEvent.ShowToast("Re-indexed ${multi.sourceNames.size} mappings"))
+                        return@launch
+                    }
+                }
+                if (_newCompareSource.value != null) {
+                    val refreshed = repository.compareMappings(_oldCompareSource.value, _newCompareSource.value!!)
+                    _comparisonReport.value = refreshed
+                    rebuildSearchIndexAsync(refreshed)
+                    _uiEvents.emit(UiEvent.ShowToast("Re-indexed ${refreshed.catalogFlags.size} flags"))
+                } else {
+                    rebuildSearchIndexAsync(currentReport)
+                    _uiEvents.emit(UiEvent.ShowToast("Rebuilt search index (${currentReport.catalogFlags.size} flags)"))
+                }
+            } catch (e: Exception) {
+                _uiEvents.emit(UiEvent.ShowToast("Refresh failed: ${e.message}"))
+            } finally {
+                _isComparing.value = false
+            }
+        }
+    }
+
+    fun setActiveResultSection(section: CompareResultSection) {
+        _activeResultSection.value = section
+        when (section) {
+            CompareResultSection.COMPLETE_CATALOG -> _compareSectionTab.value = CompareSectionTab.CATALOG
+            CompareResultSection.NEW_FLAGS -> {
+                _compareSectionTab.value = CompareSectionTab.CHANGES
+                _compareFilterTab.value = CompareFilterTab.NEW
+            }
+            CompareResultSection.REMOVED_FLAGS -> {
+                _compareSectionTab.value = CompareSectionTab.CHANGES
+                _compareFilterTab.value = CompareFilterTab.REMOVED
+            }
+            CompareResultSection.UPDATED_FLAGS -> {
+                _compareSectionTab.value = CompareSectionTab.CHANGES
+                _compareFilterTab.value = CompareFilterTab.UPDATED
+            }
+            CompareResultSection.UNCHANGED_FLAGS -> {
+                _compareSectionTab.value = CompareSectionTab.CHANGES
+                _compareFilterTab.value = CompareFilterTab.UNCHANGED
+            }
+            CompareResultSection.CATEGORIES -> _compareSectionTab.value = CompareSectionTab.ANALYTICS
+            CompareResultSection.MAPPING_HEALTH -> _compareSectionTab.value = CompareSectionTab.HEALTH
+            else -> _compareSectionTab.value = CompareSectionTab.CHANGES
+        }
     }
 
     fun setCompareSectionTab(tab: CompareSectionTab) {
@@ -572,12 +851,119 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
         _compareSearchQuery.value = query
     }
 
+    fun commitCompareSearchToHistory(query: String = _compareSearchQuery.value) {
+        val trimmed = query.trim()
+        if (trimmed.isNotEmpty()) {
+            _compareSearchHistory.value = repository.saveCompareSearchQuery(trimmed)
+        }
+    }
+
     fun clearCompareSearch() {
         _compareSearchQuery.value = ""
     }
 
+    fun clearCompareSearchHistory() {
+        repository.clearCompareSearchHistory()
+        _compareSearchHistory.value = emptyList()
+    }
+
     fun setCatalogCategoryFilter(category: String) {
         _catalogCategoryFilter.value = category
+        _selectedCatalogCategories.value = if (category == "See All Flags") emptySet() else setOf(category)
+    }
+
+    fun toggleCatalogCategorySelection(category: String) {
+        if (category == "See All Flags") {
+            _selectedCatalogCategories.value = emptySet()
+            _catalogCategoryFilter.value = "See All Flags"
+            return
+        }
+        val next = _selectedCatalogCategories.value.toMutableSet()
+        if (!next.add(category)) {
+            next.remove(category)
+        }
+        _selectedCatalogCategories.value = next
+        _catalogCategoryFilter.value = when (next.size) {
+            0 -> "See All Flags"
+            1 -> next.first()
+            else -> "${next.size} Categories"
+        }
+    }
+
+    fun clearCatalogCategoryFilters() {
+        _selectedCatalogCategories.value = emptySet()
+        _catalogCategoryFilter.value = "See All Flags"
+    }
+
+    fun setNamespaceFilter(prefix: String) {
+        _namespaceFilter.value = prefix
+    }
+
+    fun setExactSubflagCountFilter(count: Int?) {
+        _exactSubflagCountFilter.value = count
+    }
+
+    fun setOnlyInOneMappingFilter(enabled: Boolean) {
+        _onlyInOneMappingFilter.value = enabled
+    }
+
+    fun setFavoritesOnlyFilter(enabled: Boolean) {
+        _favoritesOnlyFilter.value = enabled
+    }
+
+    fun toggleFavoriteFlag(flagName: String) {
+        val updated = repository.toggleFavoriteFlag(flagName)
+        _favoriteFlagNames.value = updated
+        viewModelScope.launch {
+            val isNowFav = updated.contains(flagName)
+            _uiEvents.emit(UiEvent.ShowToast(if (isNowFav) "Pinned $flagName to Favorites" else "Removed $flagName from Favorites"))
+        }
+    }
+
+    fun setCatalogDisplayMode(mode: CatalogDisplayMode) {
+        _catalogDisplayMode.value = mode
+    }
+
+    fun toggleExpandAllCatalogCategories() {
+        _expandAllCatalogCategories.value = !_expandAllCatalogCategories.value
+    }
+
+    fun toggleResultSelection(flagName: String) {
+        val next = _selectedResultKeys.value.toMutableSet()
+        if (!next.add(flagName)) {
+            next.remove(flagName)
+        }
+        _selectedResultKeys.value = next
+    }
+
+    fun selectResultKeys(keys: Collection<String>) {
+        _selectedResultKeys.value = _selectedResultKeys.value + keys
+    }
+
+    fun clearResultSelection() {
+        _selectedResultKeys.value = emptySet()
+    }
+
+    fun bulkCopySelected(report: ComparisonReport) {
+        val selected = _selectedResultKeys.value
+        if (selected.isEmpty()) return
+        val items = report.catalogFlags.filter { selected.contains(it.name) }
+        val text = MappingIntelligenceAnalyzer.generateCatalogListExport(
+            title = "Selected Flags (${items.size})",
+            items = items,
+            format = ExportFileFormat.TXT
+        )
+        copyToClipboard(text, "Copied ${items.size} selected flags")
+    }
+
+    fun copyAllFlagsInCategory(report: ComparisonReport, categoryName: String) {
+        val items = report.catalogFlags.filter { it.category == categoryName }
+        val text = MappingIntelligenceAnalyzer.generateCatalogListExport(
+            title = "Category: $categoryName",
+            items = items,
+            format = ExportFileFormat.TXT
+        )
+        copyToClipboard(text, "Copied ${items.size} flags from $categoryName")
     }
 
     fun setCatalogSortOption(sort: CatalogSortOption) {
@@ -594,7 +980,8 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun openFlagDetailByName(flagName: String) {
         val report = _comparisonReport.value ?: return
-        val match = report.catalogFlags.firstOrNull { it.name == flagName }
+        val match = _compareSearchIndex.value?.byName?.get(flagName)
+            ?: report.catalogFlags.firstOrNull { it.name == flagName }
         if (match != null) {
             _selectedCatalogFlagDetail.value = match
         }
@@ -611,9 +998,13 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
                 val restored = repository.loadComparisonHistorySnapshot(record.id)
                 if (restored != null) {
                     _comparisonReport.value = restored
+                    _multiFileReport.value = null
+                    _sessionDiffReport.value = null
+                    _activeResultSection.value = CompareResultSection.OVERVIEW
                     _compareSectionTab.value = CompareSectionTab.CHANGES
                     _compareFilterTab.value = CompareFilterTab.ALL
                     _compareQuickFilter.value = CompareQuickFilter.ALL
+                    rebuildSearchIndexAsync(restored)
                     _uiEvents.emit(UiEvent.ShowToast("Loaded saved comparison: ${record.oldSourceName} vs ${record.newSourceName}"))
                 } else {
                     _uiEvents.emit(UiEvent.ShowToast("Snapshot file unavailable for this history entry"))
@@ -670,14 +1061,64 @@ class MetaToolsViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun saveExportToUri(uri: Uri, report: ComparisonReport, type: ExportReportType, format: ExportFileFormat) {
+    fun buildExportContentForReport(
+        report: ComparisonReport,
+        type: ExportReportType,
+        format: ExportFileFormat,
+        categoryOverride: String? = null,
+        selectedOnly: Boolean = false
+    ): String {
+        if (selectedOnly && _selectedResultKeys.value.isNotEmpty()) {
+            val selectedItems = report.catalogFlags.filter { _selectedResultKeys.value.contains(it.name) }
+            return MappingIntelligenceAnalyzer.generateCatalogListExport(
+                title = "Selected Results (${selectedItems.size})",
+                items = selectedItems,
+                format = format
+            )
+        }
+        return when (type) {
+            ExportReportType.SINGLE_CATEGORY_EXPORT -> {
+                val cat = categoryOverride ?: _catalogCategoryFilter.value
+                MappingIntelligenceAnalyzer.generateSingleCategoryExport(report, cat, format)
+            }
+            ExportReportType.MULTI_FILE_MATRIX_REPORT -> {
+                val multi = _multiFileReport.value
+                if (multi != null) {
+                    MappingIntelligenceAnalyzer.generateMultiFileExport(multi, format)
+                } else {
+                    MappingCompareEngine.generateExportContent(report, type, format)
+                }
+            }
+            else -> MappingCompareEngine.generateExportContent(report, type, format)
+        }
+    }
+
+    fun saveExportToUri(
+        uri: Uri,
+        report: ComparisonReport,
+        type: ExportReportType,
+        format: ExportFileFormat,
+        categoryOverride: String? = null,
+        selectedOnly: Boolean = false
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val content = MappingCompareEngine.generateExportContent(report, type, format)
+                val content = buildExportContentForReport(
+                    report = report,
+                    type = type,
+                    format = format,
+                    categoryOverride = categoryOverride,
+                    selectedOnly = selectedOnly
+                )
                 getApplication<Application>().contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(content.toByteArray(Charsets.UTF_8))
                 } ?: throw IllegalStateException("Could not open destination stream")
-                _uiEvents.emit(UiEvent.ShowToast("Saved ${type.title} (${format.extension.uppercase()})"))
+                _uiEvents.emit(
+                    UiEvent.ShowToast(
+                        if (selectedOnly) "Exported ${_selectedResultKeys.value.size} selected items (${format.extension.uppercase()})"
+                        else "Saved ${type.title} (${format.extension.uppercase()})"
+                    )
+                )
             } catch (e: Exception) {
                 _uiEvents.emit(UiEvent.ShowToast("Save failed: ${e.message}"))
             }

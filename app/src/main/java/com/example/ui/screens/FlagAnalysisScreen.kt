@@ -1343,8 +1343,14 @@ private fun CategoryAccordionCard(
                 ) {
                     HorizontalDivider(color = AmoledBorder)
 
-                    flags.forEach { uFlag ->
-                        UniversalFlagCard(
+                    flags.forEachIndexed { index, uFlag ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                color = Color(0xFF222222),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                        }
+                        UniversalFlagSection(
                             flag = uFlag,
                             onToggleSubFlag = onToggleSubFlag,
                             onResetSubFlag = onResetSubFlag
@@ -1357,84 +1363,121 @@ private fun CategoryAccordionCard(
 }
 
 @Composable
-private fun UniversalFlagCard(
+private fun UniversalFlagSection(
     flag: AnalyzedUniversalFlag,
     onToggleSubFlag: (String, String) -> Unit,
     onResetSubFlag: (String, String) -> Unit
 ) {
-    Card(
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, if (flag.isModified) AccentGreen.copy(alpha = 0.5f) else Color(0xFF262626), RoundedCornerShape(10.dp)),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF161616))
+            .padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        // Universal Flag Header (flat inside CategoryAccordionCard to prevent nested rounded boxes)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Universal Flag Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        clipboardManager.setText(AnnotatedString(flag.name))
+                        Toast.makeText(context, "Copied ${flag.name}", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
                     Text(
                         text = flag.name,
                         color = if (flag.isUnknown) WarningYellow else TextPrimary,
                         fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy universal flag name",
+                        tint = TextTertiary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.clickable {
+                            clipboardManager.setText(AnnotatedString(flag.code))
+                            Toast.makeText(context, "Copied code ${flag.code}", Toast.LENGTH_SHORT).show()
+                        }
                     ) {
                         Text(
                             text = "Code: ${flag.code}",
-                            color = TextTertiary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        if (flag.isUnknown) {
-                            Text(
-                                text = "• Unmapped",
-                                color = WarningYellow,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
-                if (flag.isModified) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF2E7D32).copy(alpha = 0.3f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "MODIFIED",
                             color = AccentGreen,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy universal flag code",
+                            tint = AccentGreen,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                    if (flag.isUnknown) {
+                        Text(
+                            text = "• Unmapped",
+                            color = WarningYellow,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             }
 
-            HorizontalDivider(color = Color(0xFF262626))
-
-            // Sub-flags list
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                flag.subFlags.forEach { sFlag ->
-                    SubFlagRow(
-                        universalCode = flag.code,
-                        subFlag = sFlag,
-                        onToggle = { onToggleSubFlag(flag.code, sFlag.subCode) },
-                        onReset = { onResetSubFlag(flag.code, sFlag.subCode) }
+            if (flag.isModified) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF2E7D32).copy(alpha = 0.3f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "MODIFIED",
+                        color = AccentGreen,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
+            }
+        }
+
+        // Sub-flags list: each subflag has ONE clean rounded container
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            flag.subFlags.forEach { sFlag ->
+                SubFlagRow(
+                    universalCode = flag.code,
+                    subFlag = sFlag,
+                    onToggle = { onToggleSubFlag(flag.code, sFlag.subCode) },
+                    onReset = { onResetSubFlag(flag.code, sFlag.subCode) },
+                    onCopyName = {
+                        clipboardManager.setText(AnnotatedString(sFlag.name))
+                        Toast.makeText(context, "Copied ${sFlag.name}", Toast.LENGTH_SHORT).show()
+                    },
+                    onCopyCode = {
+                        clipboardManager.setText(AnnotatedString(sFlag.subCode))
+                        Toast.makeText(context, "Copied ID ${sFlag.subCode}", Toast.LENGTH_SHORT).show()
+                    }
+                )
             }
         }
     }
@@ -1445,33 +1488,73 @@ private fun SubFlagRow(
     universalCode: String,
     subFlag: AnalyzedSubFlag,
     onToggle: () -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onCopyName: () -> Unit,
+    onCopyCode: () -> Unit
 ) {
+    val containerBorder = when {
+        subFlag.isModified -> AccentGreen.copy(alpha = 0.55f)
+        subFlag.isEnabled -> AccentGreen.copy(alpha = 0.25f)
+        else -> AmoledBorder
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF1E1E1E))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF161616))
+            .border(1.dp, containerBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = subFlag.name,
-                color = if (subFlag.isUnknown) WarningYellow else TextPrimary,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Medium
-            )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.clickable(onClick = onCopyName)
             ) {
                 Text(
-                    text = "ID: ${subFlag.subCode}",
-                    color = TextTertiary,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
+                    text = subFlag.name,
+                    color = if (subFlag.isUnknown) WarningYellow else TextPrimary,
+                    fontSize = 12.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy subflag name",
+                    tint = TextTertiary,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable(onClick = onCopyCode)
+                ) {
+                    Text(
+                        text = "Code: ${subFlag.subCode}",
+                        color = AccentGreen,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy subflag code",
+                        tint = AccentGreen,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
                 if (subFlag.isModified) {
                     Text(
                         text = "• was: ${if (subFlag.originalEnabled) "ON" else "OFF"}",
@@ -1486,7 +1569,7 @@ private fun SubFlagRow(
         if (subFlag.isModified) {
             IconButton(
                 onClick = onReset,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Undo,

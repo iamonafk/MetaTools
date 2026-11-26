@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.NewFlagItem
 import com.example.model.NewSubFlagItem
+import com.example.model.ParentChildChangeItem
 import com.example.model.PotentialRenameCandidate
 import com.example.model.RemovedFlagItem
 import com.example.model.RemovedSubFlagItem
@@ -303,21 +305,18 @@ fun NewSubFlagCard(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        HorizontalDivider(color = AmoledBorder, modifier = Modifier.padding(vertical = 6.dp))
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(AmoledBackground)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable(onClick = onCopySubFlagName),
+                    .clickable(onClick = onCopySubFlagName)
+                    .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -328,41 +327,37 @@ fun NewSubFlagCard(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy name",
+                    contentDescription = "Copy subflag name",
                     tint = TextTertiary,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-            Box(
+            Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(AmoledCardHover)
-                    .border(1.dp, AmoledBorder, RoundedCornerShape(4.dp))
                     .clickable(onClick = onCopySubFlagCode)
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                    .padding(vertical = 2.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Code: ${item.subFlag.code}",
-                        color = AccentGreen,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy code",
-                        tint = TextTertiary,
-                        modifier = Modifier.size(10.dp)
-                    )
-                }
+                Text(
+                    text = "Code: ${item.subFlag.code}",
+                    color = AccentGreen,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy subflag code",
+                    tint = TextTertiary,
+                    modifier = Modifier.size(12.dp)
+                )
             }
         }
     }
@@ -553,21 +548,18 @@ fun RemovedSubFlagCard(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        HorizontalDivider(color = AmoledBorder, modifier = Modifier.padding(vertical = 6.dp))
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(AmoledBackground)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable(onClick = onCopySubFlagName),
+                    .clickable(onClick = onCopySubFlagName)
+                    .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -577,41 +569,37 @@ fun RemovedSubFlagCard(
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy name",
+                    contentDescription = "Copy subflag name",
                     tint = TextTertiary,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-            Box(
+            Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(AmoledCardHover)
-                    .border(1.dp, AmoledBorder, RoundedCornerShape(4.dp))
                     .clickable(onClick = onCopySubFlagCode)
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                    .padding(vertical = 2.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Code: ${item.subFlag.code}",
-                        color = DangerRed,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy code",
-                        tint = TextTertiary,
-                        modifier = Modifier.size(10.dp)
-                    )
-                }
+                Text(
+                    text = "Code: ${item.subFlag.code}",
+                    color = DangerRed,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy subflag code",
+                    tint = TextTertiary,
+                    modifier = Modifier.size(12.dp)
+                )
             }
         }
     }
@@ -1132,6 +1120,126 @@ fun PotentialRenameCandidateCard(
                 text = candidate.newName,
                 color = TextPrimary,
                 fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+// 9. Parent-Child Subflag Re-parenting Card
+@Composable
+fun ParentChildChangeCard(
+    item: ParentChildChangeItem,
+    onCopySubFlagName: () -> Unit,
+    onInspectOldParent: () -> Unit,
+    onInspectNewParent: () -> Unit,
+    onShare: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(AmoledCard)
+            .border(1.dp, UpdatedOrange.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .padding(12.dp)
+            .testTag("compare_parent_child_${item.subFlagName}")
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.SwapHoriz,
+                    contentDescription = null,
+                    tint = UpdatedOrange,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "PARENT MOVED",
+                    color = UpdatedOrange,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = item.category,
+                    color = TextTertiary,
+                    fontSize = 10.5.sp
+                )
+            }
+            IconButton(
+                onClick = onShare,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "Share parent change",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onCopySubFlagName),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = item.subFlagName,
+                color = TextPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "Copy subflag name",
+                tint = TextTertiary,
+                modifier = Modifier.size(13.dp)
+            )
+        }
+
+        HorizontalDivider(color = AmoledBorder, modifier = Modifier.padding(vertical = 6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onInspectOldParent)
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("OLD PARENT: ", color = DangerRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "${item.oldParentFlagName} (${item.oldParentCode}) • sub:${item.oldSubCode}",
+                color = TextSecondary,
+                fontSize = 11.5.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onInspectNewParent)
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("NEW PARENT: ", color = AccentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "${item.newParentFlagName} (${item.newParentCode}) • sub:${item.newSubCode}",
+                color = TextPrimary,
+                fontSize = 11.5.sp,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.weight(1f)
             )
